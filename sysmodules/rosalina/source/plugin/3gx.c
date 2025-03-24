@@ -5,37 +5,38 @@
 #include "ifile.h"
 #include "utils.h"
 
-u32  g_loadExeArgs[0x4];
+u32 g_loadExeArgs[0x4];
 
 static inline u32 invertEndianness(u32 val)
 {
     return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) | ((val & 0xFF0000) >> 8) | ((val & 0xFF000000) >> 24);
 }
 
-Result  Check_3gx_Magic(IFile *file)
+Result Check_3gx_Magic(IFile *file)
 {
-    u64     magic;
-    u64     total;
-    Result  res;
-    int     verDif;
+    u64 magic;
+    u64 total;
+    Result res;
+    int verDif;
 
     file->pos = 0;
     if (R_FAILED((res = IFile_Read(file, &total, &magic, sizeof(u64)))))
         return res;
 
-    if ((u32)magic != (u32)_3GX_MAGIC) //Invalid file type
+    if ((u32)magic != (u32)_3GX_MAGIC) // Invalid file type
         return MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, 1);
 
-    else if ((verDif = invertEndianness((u32)(magic >> 32)) - invertEndianness((u32)(_3GX_MAGIC >> 32))) != 0) //Invalid plugin version (2 -> outdated plugin; 3 -> outdated loader)
+    else if ((verDif = invertEndianness((u32)(magic >> 32)) - invertEndianness((u32)(_3GX_MAGIC >> 32))) != 0) // Invalid plugin version (2 -> outdated plugin; 3 -> outdated loader)
         return MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, (verDif < 0) ? 2 : 3);
 
-    else return 0;
+    else
+        return 0;
 }
 
-Result  Read_3gx_Header(IFile *file, _3gx_Header *header)
+Result Read_3gx_Header(IFile *file, _3gx_Header *header)
 {
-    u64     total;
-    Result  res = 0;
+    u64 total;
+    Result res = 0;
 
     file->pos = 0;
     res = IFile_Read(file, &total, header, sizeof(_3gx_Header));
@@ -45,9 +46,9 @@ Result  Read_3gx_Header(IFile *file, _3gx_Header *header)
 
 Result Read_3gx_ParseHeader(IFile *file, _3gx_Header *header)
 {
-    u64     total;
-    char *  dst;
-    Result  res = 0;
+    u64 total;
+    char *dst;
+    Result res = 0;
 
     // Read author
     file->pos = (u32)header->infos.authorMsg;
@@ -89,85 +90,126 @@ Result Read_3gx_ParseHeader(IFile *file, _3gx_Header *header)
     return res;
 }
 
-Result  Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst)
+void DecryptOnlinePlugin(u32 *out, const u32 *data, u32 size)
 {
-    u32                 size;
-    u64                 total;
-    Result              res = 0;
-    _3gx_Executable     *exeHdr = &header->executable;
+    u32 key = 0x63DA901F;
+    u32 key2 = 0x480C9A12;
+    u32 key3 = 0x5AE007DF;
+
+    for (u32 i = 0; i < size / 4; i++)
+    {
+        out[i] = ~data[i];
+    }
+
+    u32 nextKey = key;
+    u32 addKey = key;
+
+    for (u32 i = 0; i < size / 4; i++)
+    {
+        u32 curKey = nextKey;
+        nextKey = out[i] ^ (key + addKey);
+        addKey += out[i] ^ key2;
+        out[i] ^= i * (key3 + curKey);
+        out[i] = (out[i] ^ curKey);
+    }
+}
+
+Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst, bool isOnlinePlugin)
+{
+    u32 size;
+    u64 total;
+    Result res = 0;
+    _3gx_Executable *exeHdr = &header->executable;
     PluginLoaderContext *ctx = &PluginLoaderCtx;
 
     file->pos = exeHdr->codeOffset;
     size = exeHdr->codeSize + exeHdr->rodataSize + exeHdr->dataSize;
     res = IFile_Read(file, &total, dst, size);
-    
-    
-    if (!res && !ctx->isExeLoadFunctionset) return MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_NO_DATA);
+
+    if (isOnlinePlugin)
+    {
+        DecryptOnlinePlugin((u32 *)dst, (u32 *)dst, size);
+    }
+
+    if (!res && !ctx->isExeLoadFunctionset)
+        return MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_NO_DATA);
     u32 checksum = 0;
-    if (!res) checksum = loadExeFunc(dst, dst + size, g_loadExeArgs);
-    if (!res && checksum != ctx->exeLoadChecksum) res = MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_INVALID_ADDRESS);
+    if (!res)
+        checksum = loadExeFunc(dst, dst + size, g_loadExeArgs);
+    if (!res && checksum != ctx->exeLoadChecksum)
+        res = MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_INVALID_ADDRESS);
     Reset_3gx_LoadParams();
     return res;
 }
 
 Result Read_3gx_EmbeddedPayloads(IFile *file, _3gx_Header *header)
 {
-    u32                 tempBuff[32];
-    u32                 tempBuff2[4];
-    u64                 total;
-    Result              res = 0;
+    u32 tempBuff[32];
+    u32 tempBuff2[4];
+    u64 total;
+    Result res = 0;
     PluginLoaderContext *ctx = &PluginLoaderCtx;
-    
-    if (header->infos.embeddedExeLoadFunc) {
+
+    if (header->infos.embeddedExeLoadFunc)
+    {
         file->pos = header->executable.exeLoadFuncOffset;
         res = IFile_Read(file, &total, tempBuff, sizeof(tempBuff));
         memcpy(tempBuff2, header->infos.builtInLoadExeArgs, sizeof(tempBuff2));
-        if (!res) res = Set_3gx_LoadParams(tempBuff, tempBuff2);
-        if (!res) ctx->isExeLoadFunctionset = true;
+        if (!res)
+            res = Set_3gx_LoadParams(tempBuff, tempBuff2);
+        if (!res)
+            ctx->isExeLoadFunctionset = true;
     }
-    if (!res && header->infos.embeddedSwapSaveLoadFunc) {
+    if (!res && header->infos.embeddedSwapSaveLoadFunc)
+    {
         file->pos = header->executable.swapSaveFuncOffset;
         res = IFile_Read(file, &total, tempBuff, sizeof(tempBuff));
         memcpy(tempBuff2, header->infos.builtInSwapSaveLoadArgs, sizeof(tempBuff2));
-        if (!res) res = MemoryBlock__SetSwapSettings(tempBuff, false, tempBuff2);
+        if (!res)
+            res = MemoryBlock__SetSwapSettings(tempBuff, false, tempBuff2);
         file->pos = header->executable.swapLoadFuncOffset;
-        if (!res) res = IFile_Read(file, &total, tempBuff, sizeof(tempBuff));
-        if (!res) res = MemoryBlock__SetSwapSettings(tempBuff, true, tempBuff2);
-        if (!res) ctx->isSwapFunctionset = true;
+        if (!res)
+            res = IFile_Read(file, &total, tempBuff, sizeof(tempBuff));
+        if (!res)
+            res = MemoryBlock__SetSwapSettings(tempBuff, true, tempBuff2);
+        if (!res)
+            ctx->isSwapFunctionset = true;
     }
     return res;
 }
 
-Result    Set_3gx_LoadParams(u32* loadFunc, u32* params)
+Result Set_3gx_LoadParams(u32 *loadFunc, u32 *params)
 {
-    u32* loadExeFuncAddr = PA_FROM_VA_PTR((u32)loadExeFunc); //Bypass mem permissions
+    u32 *loadExeFuncAddr = PA_FROM_VA_PTR((u32)loadExeFunc); // Bypass mem permissions
 
-	memcpy(g_loadExeArgs, params, sizeof(g_loadExeArgs));
-    
+    memcpy(g_loadExeArgs, params, sizeof(g_loadExeArgs));
+
     int i = 0;
     for (; i < 32 && loadFunc[i] != 0xE320F000; i++)
         loadExeFuncAddr[i] = loadFunc[i];
 
-    if (i >= 32) {
+    if (i >= 32)
+    {
         return -1;
     }
     return 0;
 }
 
-void       Reset_3gx_LoadParams(void)
+void Reset_3gx_LoadParams(void)
 {
     PluginLoaderContext *ctx = &PluginLoaderCtx;
-	u32* loadExeFuncAddr = PA_FROM_VA_PTR((u32)loadExeFunc); //Bypass mem permissions
+    u32 *loadExeFuncAddr = PA_FROM_VA_PTR((u32)loadExeFunc); // Bypass mem permissions
 
-	memset(g_loadExeArgs, 0, sizeof(g_loadExeArgs));
+    memset(g_loadExeArgs, 0, sizeof(g_loadExeArgs));
 
-	loadExeFuncAddr[0] = 0xE12FFF1E; // BX LR
+    loadExeFuncAddr[0] = 0xE12FFF1E; // BX LR
 
-	for (int i = 1; i < 32; i++) {
-		loadExeFuncAddr[i] = 0xE320F000; // NOP
-	}
-    
+    for (int i = 1; i < 32; i++)
+    {
+        loadExeFuncAddr[i] = 0xE320F000; // NOP
+    }
+
     ctx->isExeLoadFunctionset = false;
 
-	svcInvalidateEntireInstructionCache();
+    svcInvalidateEntireInstructionCache();
 }

@@ -11,6 +11,9 @@ u32  g_loadSaveSwapArgs[4];
 char g_swapFileName[256];
 u32  g_memBlockSize = 5 * 1024 * 1024;
 
+extern bool PluginWatcher_isRunning;
+extern bool PluginWatcher_isEnabled;
+
 Result     MemoryBlock__SetSize(u32 size) {
     PluginLoaderContext *ctx = &PluginLoaderCtx;
     MemoryBlock *memblock = &ctx->memblock;
@@ -120,6 +123,9 @@ Result      MemoryBlock__Free(void)
     if (R_FAILED(res))
         PluginLoader__Error("Couldn't free memblock", res);
 
+    if(PluginWatcher_isEnabled)
+        PluginWatcher_isRunning = false;
+
     return res;
 }
 
@@ -224,6 +230,9 @@ Result     MemoryBlock__MountInProcess(void)
         error->code = res;
     }
 
+    if(PluginWatcher_isEnabled)
+        PluginWatcher_isRunning = true;
+
     return res;
 }
 
@@ -236,6 +245,9 @@ Result     MemoryBlock__UnmountFromProcess(void)
 
     res |= svcUnmapProcessMemoryEx(target, 0x07000000, header->exeSize);
     res |= svcUnmapProcessMemoryEx(target, header->heapVA, header->heapSize);
+
+    if(PluginWatcher_isEnabled)
+        PluginWatcher_isRunning = false;
 
     return res;
 }

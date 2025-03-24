@@ -384,3 +384,11 @@ void Draw_ConvertFrameBufferLines(u8 *buf, u32 width, u32 startingLine, u32 numL
     FrameBufferConvertArgs args = { buf, width, (u8)startingLine, (u8)numLines, (u8)scaleFactorY, top, left };
     svcCustomBackdoor(Draw_ConvertFrameBufferLinesKernel, &args);
 }
+
+void ClearScreenQuickly(void)
+{
+    Draw_Lock();
+    Draw_ClearFramebuffer();
+    Draw_FlushFramebuffer();
+    Draw_Unlock();
+}

@@ -1,28 +1,28 @@
 /*
-*   This file is part of Luma3DS
-*   Copyright (C) 2016-2020 Aurora Wright, TuxSH
-*
-*   This program is free software: you can redistribute it and/or modify
-*   it under the terms of the GNU General Public License as published by
-*   the Free Software Foundation, either version 3 of the License, or
-*   (at your option) any later version.
-*
-*   This program is distributed in the hope that it will be useful,
-*   but WITHOUT ANY WARRANTY; without even the implied warranty of
-*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*   GNU General Public License for more details.
-*
-*   You should have received a copy of the GNU General Public License
-*   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*
-*   Additional Terms 7.b and 7.c of GPLv3 apply to this file:
-*       * Requiring preservation of specified reasonable legal notices or
-*         author attributions in that material or in the Appropriate Legal
-*         Notices displayed by works containing it.
-*       * Prohibiting misrepresentation of the origin of that material,
-*         or requiring that modified versions of such material be marked in
-*         reasonable ways as different from the original version.
-*/
+ *   This file is part of Luma3DS
+ *   Copyright (C) 2016-2020 Aurora Wright, TuxSH
+ *
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *   Additional Terms 7.b and 7.c of GPLv3 apply to this file:
+ *       * Requiring preservation of specified reasonable legal notices or
+ *         author attributions in that material or in the Appropriate Legal
+ *         Notices displayed by works containing it.
+ *       * Prohibiting misrepresentation of the origin of that material,
+ *         or requiring that modified versions of such material be marked in
+ *         reasonable ways as different from the original version.
+ */
 
 #include <3ds.h>
 #include <3ds/os.h>
@@ -35,6 +35,7 @@
 #include "menus/miscellaneous.h"
 #include "menus/sysconfig.h"
 #include "menus/screen_filters.h"
+#include "menus/plugin_options.h"
 #include "plugin.h"
 #include "ifile.h"
 #include "memory.h"
@@ -45,23 +46,147 @@
 Menu rosalinaMenu = {
     "Rosalina menu",
     {
-        { "Take screenshot", METHOD, .method = &RosalinaMenu_TakeScreenshot },
-        { "Screen filters...", MENU, .menu = &screenFiltersMenu },
-        { "Cheats...", METHOD, .method = &RosalinaMenu_Cheats },
-        { "", METHOD, .method = PluginLoader__MenuCallback},
-        { "New 3DS menu...", MENU, .menu = &N3DSMenu, .visibility = &menuCheckN3ds },
-        { "Process list", METHOD, .method = &RosalinaMenu_ProcessList },
-        { "Debugger options...", MENU, .menu = &debuggerMenu },
-        { "System configuration...", MENU, .menu = &sysconfigMenu },
-        { "Miscellaneous options...", MENU, .menu = &miscellaneousMenu },
-        { "Save settings", METHOD, .method = &RosalinaMenu_SaveSettings },
-        { "Power off / reboot", METHOD, .method = &RosalinaMenu_PowerOffOrReboot },
-        { "System info", METHOD, .method = &RosalinaMenu_ShowSystemInfo },
-        { "Credits", METHOD, .method = &RosalinaMenu_ShowCredits },
-        { "Debug info", METHOD, .method = &RosalinaMenu_ShowDebugInfo, .visibility = &rosalinaMenuShouldShowDebugInfo },
+        {"Take screenshot", METHOD, .method = &RosalinaMenu_TakeScreenshot},
+        {"Screen filters...", MENU, .menu = &screenFiltersMenu},
+        {"Cheats...", METHOD, .method = &RosalinaMenu_Cheats},
+        {"", METHOD, .method = PluginLoader__MenuCallback},
+        {"Plugin options...", MENU, .menu = &pluginOptionsMenu},
+        {"New 3DS menu...", MENU, .menu = &N3DSMenu, .visibility = &menuCheckN3ds},
+        {"Process list", METHOD, .method = &RosalinaMenu_ProcessList},
+        {"Debugger options...", MENU, .menu = &debuggerMenu},
+        {"System configuration...", MENU, .menu = &sysconfigMenu},
+        {"Miscellaneous options...", MENU, .menu = &miscellaneousMenu},
+        {"Save settings", METHOD, .method = &RosalinaMenu_SaveSettings},
+        {"Power off / reboot", METHOD, .method = &RosalinaMenu_PowerOffOrReboot},
+        {"System info", METHOD, .method = &RosalinaMenu_ShowSystemInfo},
+        {"Credits", METHOD, .method = &RosalinaMenu_ShowCredits},
+        {"Debug info", METHOD, .method = &RosalinaMenu_ShowDebugInfo, .visibility = &rosalinaMenuShouldShowDebugInfo},
         {},
+    }};
+
+Result CopyFileInSdmc(const char *src, const char *dst)
+{
+    FS_Archive sdmcArchive;
+    u64 remaining;
+    u64 total;
+    Result res;
+    IFile srcFile;
+    IFile dstFile;
+    const u32 bufferSize = 2048;
+    u8 buffer[bufferSize];
+
+    // Open the sdmc archive
+    if (R_FAILED(res = FSUSER_OpenArchive(&sdmcArchive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""))))
+        return res;
+
+    // Open the source file
+    if (R_FAILED(res = IFile_OpenFromArchive(&srcFile, sdmcArchive, fsMakePath(PATH_ASCII, src), FS_OPEN_READ)))
+    {
+        FSUSER_CloseArchive(sdmcArchive);
+        return res;
     }
-};
+
+    // Open the destination file
+    if (R_FAILED(res = IFile_OpenFromArchive(&dstFile, sdmcArchive, fsMakePath(PATH_ASCII, dst), FS_OPEN_WRITE)))
+    {
+        IFile_Close(&srcFile);
+        FSUSER_CloseArchive(sdmcArchive);
+        return res;
+    }
+
+    // Close the sdmc archive
+    FSUSER_CloseArchive(sdmcArchive);
+
+    // Clear the destination file
+    if (R_FAILED(res = IFile_SetSize(&dstFile, 0)))
+    {
+        IFile_Close(&srcFile);
+        IFile_Close(&dstFile);
+        return res;
+    }
+
+    // Get the file size
+    if (R_FAILED(IFile_GetSize(&srcFile, &remaining)))
+    {
+        IFile_Close(&srcFile);
+        IFile_Close(&dstFile);
+        return res;
+    }
+
+    // Copy the file
+    while (remaining != 0)
+    {
+        u64 size = remaining > bufferSize ? bufferSize : remaining;
+
+        if (R_FAILED(IFile_Read(&srcFile, &total, (void *)buffer, size)) || R_FAILED(IFile_Write(&dstFile, &total, (void *)buffer, total, 0)))
+        {
+            IFile_Close(&srcFile);
+            IFile_Close(&dstFile);
+            return res;
+        }
+        remaining -= total;
+    }
+
+    // Close the files
+    IFile_Close(&srcFile);
+    IFile_Close(&dstFile);
+
+    return 0;
+}
+
+void RosalinaMenu_ChangeVersion(void)
+{
+    u32 keys;
+    const char *srcParh = "/luma/firms/v9.1.firm";
+
+    ClearScreenQuickly();
+
+    do
+    {
+        Draw_Lock();
+        Draw_DrawString(10, 10, COLOR_TITLE, "Version changer");
+        Draw_DrawString(10, 30, COLOR_WHITE, "Press A to change the version, press B to go back.");
+        Draw_FlushFramebuffer();
+        Draw_Unlock();
+
+        keys = waitInputWithTimeout(1000);
+
+        if (keys & KEY_A)
+        {
+            ClearScreenQuickly();
+
+            Draw_Lock();
+            Draw_DrawString(10, 10, COLOR_TITLE, "Change luma3DS version");
+            Draw_DrawString(10, 30, COLOR_WHITE, "Please wait...");
+            Draw_FlushFramebuffer();
+            Draw_Unlock();
+
+            // Change the boot.firm
+            if (R_FAILED(CopyFileInSdmc(srcParh, "/boot.firm")))
+            {
+                do
+                {
+                    Draw_Lock();
+                    Draw_DrawString(10, 10, COLOR_TITLE, "Error");
+                    Draw_DrawString(10, 30, COLOR_WHITE, "Failed to change the version. Press A to go back.");
+                    Draw_FlushFramebuffer();
+                    Draw_Unlock();
+
+                    keys = waitInputWithTimeout(1000);
+
+                    if (keys & KEY_A)
+                    {
+                        return;
+                    }
+                } while (!menuShouldExit);
+            }
+
+            // Reboot the 3ds
+            menuLeave();
+            APT_HardwareResetAsync();
+        }
+    } while (!menuShouldExit);
+}
 
 bool rosalinaMenuShouldShowDebugInfo(void)
 {
@@ -84,14 +209,13 @@ void RosalinaMenu_SaveSettings(void)
     {
         Draw_Lock();
         Draw_DrawString(10, 10, COLOR_TITLE, "Save settings");
-        if(R_SUCCEEDED(res))
+        if (R_SUCCEEDED(res))
             Draw_DrawString(10, 30, COLOR_WHITE, "Operation succeeded.");
         else
             Draw_DrawFormattedString(10, 30, COLOR_WHITE, "Operation failed (0x%08lx).", res);
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    }
-    while(!(waitInput() & KEY_B) && !menuShouldExit);
+    } while (!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 void RosalinaMenu_PowerOffOrReboot(void)
@@ -111,23 +235,22 @@ void RosalinaMenu_PowerOffOrReboot(void)
 
         u32 pressed = waitInputWithTimeout(1000);
 
-        if(pressed & KEY_Y)
+        if (pressed & KEY_Y)
         {
             menuLeave();
             APT_HardwareResetAsync();
             return;
         }
-        else if(pressed & KEY_A)
+        else if (pressed & KEY_A)
         {
             // Soft shutdown
             menuLeave();
             srvPublishToSubscriber(0x203, 0);
             return;
         }
-        else if(pressed & KEY_B)
+        else if (pressed & KEY_B)
             return;
-    }
-    while(!menuShouldExit);
+    } while (!menuShouldExit);
 }
 
 void RosalinaMenu_ShowSystemInfo(void)
@@ -157,8 +280,7 @@ void RosalinaMenu_ShowSystemInfo(void)
 
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    }
-    while(!(waitInput() & KEY_B) && !menuShouldExit);
+    } while (!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 void RosalinaMenu_ShowDebugInfo(void)
@@ -192,27 +314,23 @@ void RosalinaMenu_ShowDebugInfo(void)
             u32 clkDiv = 1 << (1 + (speedInfo.sdClkCtrl & 0xFF));
             posY = Draw_DrawFormattedString(
                 10, posY, COLOR_WHITE, "SDMC speed: HS=%d %lukHz\n",
-                (int)speedInfo.highSpeedModeEnabled, SYSCLOCK_SDMMC / (1000 * clkDiv)
-            );
+                (int)speedInfo.highSpeedModeEnabled, SYSCLOCK_SDMMC / (1000 * clkDiv));
         }
         if (R_SUCCEEDED(FSUSER_GetNandSpeedInfo(&speedInfo)))
         {
             u32 clkDiv = 1 << (1 + (speedInfo.sdClkCtrl & 0xFF));
             posY = Draw_DrawFormattedString(
                 10, posY, COLOR_WHITE, "NAND speed: HS=%d %lukHz\n",
-                (int)speedInfo.highSpeedModeEnabled, SYSCLOCK_SDMMC / (1000 * clkDiv)
-            );
+                (int)speedInfo.highSpeedModeEnabled, SYSCLOCK_SDMMC / (1000 * clkDiv));
         }
         {
             posY = Draw_DrawFormattedString(
                 10, posY, COLOR_WHITE, "APPMEMTYPE: %lu\n",
-                OS_KernelConfig->app_memtype
-            );
+                OS_KernelConfig->app_memtype);
         }
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    }
-    while(!(waitInput() & KEY_B) && !menuShouldExit);
+    } while (!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 void RosalinaMenu_ShowCredits(void)
@@ -236,20 +354,20 @@ void RosalinaMenu_ShowCredits(void)
         posY += 2 * SPACING_Y;
 
         Draw_DrawString(10, posY, COLOR_WHITE,
-            (
-                "Special thanks to:\n"
-                "  fincs, WinterMute, mtheall, piepie62,\n"
-                "  Luma3DS contributors, libctru contributors,\n"
-                "  other people"
-            ));
+                        (
+                            "Special thanks to:\n"
+                            "  fincs, WinterMute, mtheall, piepie62,\n"
+                            "  Luma3DS contributors, libctru contributors,\n"
+                            "  other people"));
 
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    }
-    while(!(waitInput() & KEY_B) && !menuShouldExit);
+    } while (!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
-#define TRY(expr) if(R_FAILED(res = (expr))) goto end;
+#define TRY(expr)               \
+    if (R_FAILED(res = (expr))) \
+        goto end;
 
 static s64 timeSpentConvertingScreenshot = 0;
 static s64 timeSpentWritingScreenshot = 0;
@@ -294,7 +412,7 @@ static Result RosalinaMenu_WriteScreenshot(IFile *file, u32 width, bool top, boo
         remaining -= lineSize * nlines * scaleFactorY;
         buf = framebufferCache;
     }
-    end:
+end:
 
     Draw_FreeFramebufferCache();
     return res;
@@ -316,7 +434,8 @@ void RosalinaMenu_TakeScreenshot(void)
     timeSpentConvertingScreenshot = 0;
     timeSpentWritingScreenshot = 0;
 
-    if(R_FAILED(svcGetSystemInfo(&out, 0x10000, 0x203))) svcBreak(USERBREAK_ASSERT);
+    if (R_FAILED(svcGetSystemInfo(&out, 0x10000, 0x203)))
+        svcBreak(USERBREAK_ASSERT);
     isSdMode = (bool)out;
 
     archiveId = isSdMode ? ARCHIVE_SDMC : ARCHIVE_NAND_RW;
@@ -333,10 +452,10 @@ void RosalinaMenu_TakeScreenshot(void)
     Draw_GetCurrentScreenInfo(&topWidth, &is3d, true);
 
     res = FSUSER_OpenArchive(&archive, archiveId, fsMakePath(PATH_EMPTY, ""));
-    if(R_SUCCEEDED(res))
+    if (R_SUCCEEDED(res))
     {
         res = FSUSER_CreateDirectory(archive, fsMakePath(PATH_ASCII, "/luma/screenshots"), 0);
-        if((u32)res == 0xC82044BE) // directory already exists
+        if ((u32)res == 0xC82044BE) // directory already exists
             res = 0;
         FSUSER_CloseArchive(archive);
     }
@@ -358,7 +477,7 @@ void RosalinaMenu_TakeScreenshot(void)
     TRY(RosalinaMenu_WriteScreenshot(&file, bottomWidth, false, true));
     TRY(IFile_Close(&file));
 
-    if(is3d && (Draw_GetCurrentFramebufferAddress(true, true) != Draw_GetCurrentFramebufferAddress(true, false)))
+    if (is3d && (Draw_GetCurrentFramebufferAddress(true, true) != Draw_GetCurrentFramebufferAddress(true, false)))
     {
         sprintf(filename, "/luma/screenshots/%s_top_right.bmp", dateTimeStr);
         TRY(IFile_Open(&file, archiveId, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, filename), FS_OPEN_CREATE | FS_OPEN_WRITE));
@@ -383,7 +502,7 @@ end:
     {
         Draw_Lock();
         Draw_DrawString(10, 10, COLOR_TITLE, "Screenshot");
-        if(R_FAILED(res))
+        if (R_FAILED(res))
             Draw_DrawFormattedString(10, 30, COLOR_WHITE, "Operation failed (0x%08lx).", (u32)res);
         else
         {
@@ -397,8 +516,7 @@ end:
 
         Draw_FlushFramebuffer();
         Draw_Unlock();
-    }
-    while(!(waitInput() & KEY_B) && !menuShouldExit);
+    } while (!(waitInput() & KEY_B) && !menuShouldExit);
 }
 
 static Result menuWriteSelfScreenshot(IFile *file)
@@ -451,7 +569,8 @@ void menuTakeSelfScreenshot(void)
     timeSpentConvertingScreenshot = 0;
     timeSpentWritingScreenshot = 0;
 
-    if(R_FAILED(svcGetSystemInfo(&out, 0x10000, 0x203))) svcBreak(USERBREAK_ASSERT);
+    if (R_FAILED(svcGetSystemInfo(&out, 0x10000, 0x203)))
+        svcBreak(USERBREAK_ASSERT);
     isSdMode = (bool)out;
 
     archiveId = isSdMode ? ARCHIVE_SDMC : ARCHIVE_NAND_RW;
@@ -459,10 +578,10 @@ void menuTakeSelfScreenshot(void)
     svcFlushEntireDataCache();
 
     res = FSUSER_OpenArchive(&archive, archiveId, fsMakePath(PATH_EMPTY, ""));
-    if(R_SUCCEEDED(res))
+    if (R_SUCCEEDED(res))
     {
         res = FSUSER_CreateDirectory(archive, fsMakePath(PATH_ASCII, "/luma/screenshots"), 0);
-        if((u32)res == 0xC82044BE) // directory already exists
+        if ((u32)res == 0xC82044BE) // directory already exists
             res = 0;
         FSUSER_CloseArchive(archive);
     }

@@ -1,9 +1,9 @@
 /*
-*   This file is part of Luma3DS.
-*   Copyright (C) 2016-2020 Aurora Wright, TuxSH
-*
-*   SPDX-License-Identifier: (MIT OR GPL-2.0-or-later)
-*/
+ *   This file is part of Luma3DS.
+ *   Copyright (C) 2016-2020 Aurora Wright, TuxSH
+ *
+ *   SPDX-License-Identifier: (MIT OR GPL-2.0-or-later)
+ */
 
 #include "gdb.h"
 #include "gdb/net.h"
@@ -51,6 +51,8 @@ void GDB_FinalizeContext(GDBContext *ctx)
     RecursiveLock_Unlock(&ctx->lock);
 }
 
+extern bool isForbiddenName(const char *name);
+
 Result GDB_AttachToProcess(GDBContext *ctx)
 {
     Result r;
@@ -58,22 +60,31 @@ Result GDB_AttachToProcess(GDBContext *ctx)
     // Two cases: attached during execution, or started attached
     // The second case will have, after RunQueuedProcess: attach process, debugger break, attach thread (with creator = 0)
 
+    char procName[8] = {0};
+    Handle processHandle;
+    svcOpenProcess(&processHandle, ctx->pid);
+    svcGetProcessInfo((s64 *)procName, processHandle, 0x10000);
+    svcCloseHandle(processHandle);
+
+    if (isForbiddenName(procName))
+        return -1;
+
     if (!(ctx->flags & GDB_FLAG_ATTACHED_AT_START))
         r = svcDebugActiveProcess(&ctx->debug, ctx->pid);
     else
     {
         r = 0;
     }
-    if(R_SUCCEEDED(r))
+    if (R_SUCCEEDED(r))
     {
         // Note: ctx->pid will be (re)set while processing 'attach process'
         DebugEventInfo *info = &ctx->latestDebugEvent;
         ctx->processExited = ctx->processEnded = false;
         if (!(ctx->flags & GDB_FLAG_ATTACHED_AT_START))
         {
-            while(R_SUCCEEDED(svcGetProcessDebugEvent(info, ctx->debug)) &&
-                info->type != DBGEVENT_EXCEPTION &&
-                info->exception.type != EXCEVENT_ATTACH_BREAK)
+            while (R_SUCCEEDED(svcGetProcessDebugEvent(info, ctx->debug)) &&
+                   info->type != DBGEVENT_EXCEPTION &&
+                   info->exception.type != EXCEVENT_ATTACH_BREAK)
             {
                 GDB_PreprocessDebugEvent(ctx, info);
                 svcContinueDebugEvent(ctx->debug, ctx->continueFlags);
@@ -82,7 +93,7 @@ Result GDB_AttachToProcess(GDBContext *ctx)
         else
         {
             // Attach process, debugger break
-            for(u32 i = 0; i < 2; i++)
+            for (u32 i = 0; i < 2; i++)
             {
                 if (R_FAILED(r = svcGetProcessDebugEvent(info, ctx->debug)))
                     return r;
@@ -91,7 +102,7 @@ Result GDB_AttachToProcess(GDBContext *ctx)
                     return r;
             }
 
-            if(R_FAILED(r = svcWaitSynchronization(ctx->debug, -1LL)))
+            if (R_FAILED(r = svcWaitSynchronization(ctx->debug, -1LL)))
                 return r;
             if (R_FAILED(r = svcGetProcessDebugEvent(info, ctx->debug)))
                 return r;
@@ -111,15 +122,15 @@ Result GDB_AttachToProcess(GDBContext *ctx)
 void GDB_DetachFromProcess(GDBContext *ctx)
 {
     DebugEventInfo dummy;
-    for(u32 i = 0; i < ctx->nbBreakpoints; i++)
+    for (u32 i = 0; i < ctx->nbBreakpoints; i++)
     {
-        if(!ctx->breakpoints[i].persistent)
+        if (!ctx->breakpoints[i].persistent)
             GDB_DisableBreakpointById(ctx, i);
     }
     memset(&ctx->breakpoints, 0, sizeof(ctx->breakpoints));
     ctx->nbBreakpoints = 0;
 
-    for(u32 i = 0; i < ctx->nbWatchpoints; i++)
+    for (u32 i = 0; i < ctx->nbWatchpoints; i++)
     {
         GDB_RemoveWatchpoint(ctx, ctx->watchpoints[i], WATCHPOINT_DISABLED);
         ctx->watchpoints[i] = 0;
@@ -132,7 +143,7 @@ void GDB_DetachFromProcess(GDBContext *ctx)
     memset(ctx->threadListData, 0, sizeof(ctx->threadListData));
     ctx->threadListDataPos = 0;
 
-    //svcSignalEvent(server->statusUpdated);
+    // svcSignalEvent(server->statusUpdated);
 
     /*
         There's a possibility of a race condition with a possible user exception handler, but you shouldn't
@@ -141,17 +152,21 @@ void GDB_DetachFromProcess(GDBContext *ctx)
 
     ctx->continueFlags = (DebugFlags)0;
 
-    while(R_SUCCEEDED(svcGetProcessDebugEvent(&dummy, ctx->debug)));
-    while(R_SUCCEEDED(svcContinueDebugEvent(ctx->debug, ctx->continueFlags)));
-    if(ctx->flags & GDB_FLAG_TERMINATE_PROCESS)
+    while (R_SUCCEEDED(svcGetProcessDebugEvent(&dummy, ctx->debug)))
+        ;
+    while (R_SUCCEEDED(svcContinueDebugEvent(ctx->debug, ctx->continueFlags)))
+        ;
+    if (ctx->flags & GDB_FLAG_TERMINATE_PROCESS)
     {
         svcTerminateDebugProcess(ctx->debug);
         ctx->processEnded = true;
         ctx->processExited = false;
     }
 
-    while(R_SUCCEEDED(svcGetProcessDebugEvent(&dummy, ctx->debug)));
-    while(R_SUCCEEDED(svcContinueDebugEvent(ctx->debug, ctx->continueFlags)));
+    while (R_SUCCEEDED(svcGetProcessDebugEvent(&dummy, ctx->debug)))
+        ;
+    while (R_SUCCEEDED(svcContinueDebugEvent(ctx->debug, ctx->continueFlags)))
+        ;
 
     svcCloseHandle(ctx->debug);
     ctx->debug = 0;
@@ -177,9 +192,9 @@ Result GDB_CreateProcess(GDBContext *ctx, const FS_ProgramInfo *progInfo, u32 la
     Handle debug = 0;
     ctx->debug = 0;
     Result r = PMDBG_LaunchTitleDebug(&debug, progInfo, launchFlags);
-    if(R_FAILED(r))
+    if (R_FAILED(r))
         return r;
-    
+
     ctx->flags |= GDB_FLAG_CREATED | GDB_FLAG_ATTACHED_AT_START;
     ctx->debug = debug;
     ctx->launchedProgramInfo = *progInfo;

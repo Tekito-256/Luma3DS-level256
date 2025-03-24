@@ -36,6 +36,8 @@ else
 	DEFINES :=	-D__3DS__ -DHBLDR_DEFAULT_3DSX_TID="0x$(HBLDR_DEFAULT_3DSX_TID)ULL"
 endif
 
+BUILD_FOR_GDB  := 1
+
 ifeq ($(BUILD_FOR_GDB),1)
 	OPTFLAGS := -O0
 	LIBS := -lctrud

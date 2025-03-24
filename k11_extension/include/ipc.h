@@ -31,6 +31,24 @@
 #include "kernel.h"
 #include "utils.h"
 
+/// IPC buffer access rights.
+typedef enum
+{
+	IPC_BUFFER_R  = BIT(1),                     ///< Readable
+	IPC_BUFFER_W  = BIT(2),                     ///< Writable
+	IPC_BUFFER_RW = IPC_BUFFER_R | IPC_BUFFER_W ///< Readable and Writable
+} IPC_BufferRights;
+
+static inline u32 IPC_MakeHeader(u16 command_id, unsigned normal_params, unsigned translate_params)
+{
+	return ((u32) command_id << 16) | (((u32) normal_params & 0x3F) << 6) | (((u32) translate_params & 0x3F) << 0);
+}
+
+static inline u32 IPC_Desc_Buffer(size_t size, IPC_BufferRights rights)
+{
+	return (size << 4) | 0x8 | rights;
+}
+
 #define MAX_SESSION     345
 
 // the structure of sessions is apparently not the same on older versions...

@@ -19,6 +19,7 @@ exceptions/arm11/build
 .project
 .cproject
 .settings
+*lst
 
 Luma3DS*.zip
 hbmenu.zip
