@@ -222,27 +222,27 @@ void PluginLoader__HandleCommands(void *_ctx)
         if (ctx->useUserLoadParameters && ctx->userLoadParameters.pluginMemoryStrategy == PLG_STRATEGY_MODE3)
             TaskRunner_RunTask(j_PluginLoader__SetMode3AppMode, NULL, 0);
 
-            bool flash = !(ctx->useUserLoadParameters && ctx->userLoadParameters.noFlash);
-            if (ctx->isEnabled && TryToLoadPlugin(ctx->target, cmdbuf[2]))
+        bool flash = !(ctx->useUserLoadParameters && ctx->userLoadParameters.noFlash);
+        if (ctx->isEnabled && TryToLoadPlugin(ctx->target, cmdbuf[2]))
+        {
+            if (flash)
             {
-                if (flash)
+                // A little flash to notify the user that the plugin is loaded
+                for (u32 i = 0; i < 64; i++)
                 {
-                    // A little flash to notify the user that the plugin is loaded
-                    for (u32 i = 0; i < 64; i++)
-                    {
-                        REG32(0x10202204) = 0x01FF9933;
-                        svcSleepThread(5000000);
-                    }
-                    REG32(0x10202204) = 0;
+                    REG32(0x10202204) = 0x01FF9933;
+                    svcSleepThread(5000000);
                 }
-                PLG__SetConfigMemoryStatus(PLG_CFG_RUNNING);
+                REG32(0x10202204) = 0;
             }
-            else
-            {
-                ctx->pluginPath = "";
-                svcCloseHandle(ctx->target);
-                ctx->target = 0;
-            }
+            PLG__SetConfigMemoryStatus(PLG_CFG_RUNNING);
+        }
+        else
+        {
+            ctx->pluginPath = "";
+            svcCloseHandle(ctx->target);
+            ctx->target = 0;
+        }
 
         cmdbuf[0] = IPC_MakeHeader(1, 1, 0);
         cmdbuf[1] = 0;
