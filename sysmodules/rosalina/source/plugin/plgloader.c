@@ -133,9 +133,8 @@ Result PluginLoader__SetMode3AppMode(bool enable)
 
     u32 *cmdbuf = getThreadCommandBuffer();
 
-    if (enable)
-    {
-        ControlApplicationMemoryModeOverrideConfig *mode = (ControlApplicationMemoryModeOverrideConfig *)&cmdbuf[1];
+    if (enable) {
+        ControlApplicationMemoryModeOverrideConfig* mode = (ControlApplicationMemoryModeOverrideConfig*)&cmdbuf[1];
 
         memset(mode, 0, sizeof(ControlApplicationMemoryModeOverrideConfig));
         mode->query = true;
@@ -169,15 +168,7 @@ Result PluginLoader__SetMode3AppMode(bool enable)
     svcCloseHandle(loaderHandle);
     return res;
 }
-static void j_PluginLoader__SetMode3AppMode(void *arg)
-{
-    (void)arg;
-    PluginLoader__SetMode3AppMode(false);
-}
-
-void CheckMemory(void);
-
-void PLG__NotifyEvent(PLG_Event event, bool signal);
+static void j_PluginLoader__SetMode3AppMode(void* arg) {(void)arg; PluginLoader__SetMode3AppMode(false);}
 
 static bool PluginWatcher_AskSkip(const char *message)
 {
@@ -231,29 +222,27 @@ void PluginLoader__HandleCommands(void *_ctx)
         if (ctx->useUserLoadParameters && ctx->userLoadParameters.pluginMemoryStrategy == PLG_STRATEGY_MODE3)
             TaskRunner_RunTask(j_PluginLoader__SetMode3AppMode, NULL, 0);
 
-        bool flash = !(ctx->useUserLoadParameters && ctx->userLoadParameters.noFlash);
-        if (ctx->isEnabled && TryToLoadPlugin(ctx->target, cmdbuf[2]))
-        {
-            if (flash)
+            bool flash = !(ctx->useUserLoadParameters && ctx->userLoadParameters.noFlash);
+            if (ctx->isEnabled && TryToLoadPlugin(ctx->target, cmdbuf[2]))
             {
-                // A little flash to notify the user that the plugin is loaded
-                for (u32 i = 0; i < 64; i++)
+                if (flash)
                 {
-                    REG32(0x10202204) = 0x01FF9933;
-                    svcSleepThread(5000000);
+                    // A little flash to notify the user that the plugin is loaded
+                    for (u32 i = 0; i < 64; i++)
+                    {
+                        REG32(0x10202204) = 0x01FF9933;
+                        svcSleepThread(5000000);
+                    }
+                    REG32(0x10202204) = 0;
                 }
-                REG32(0x10202204) = 0;
+                PLG__SetConfigMemoryStatus(PLG_CFG_RUNNING);
             }
-            // if (!ctx->userLoadParameters.noIRPatch)
-            //     IR__Patch();
-            PLG__SetConfigMemoryStatus(PLG_CFG_RUNNING);
-        }
-        else
-        {
-            ctx->pluginPath = "";
-            svcCloseHandle(ctx->target);
-            ctx->target = 0;
-        }
+            else
+            {
+                ctx->pluginPath = "";
+                svcCloseHandle(ctx->target);
+                ctx->target = 0;
+            }
 
         cmdbuf[0] = IPC_MakeHeader(1, 1, 0);
         cmdbuf[1] = 0;
@@ -304,28 +293,27 @@ void PluginLoader__HandleCommands(void *_ctx)
 
         PluginLoadParameters *params = &ctx->userLoadParameters;
 
-        ctx->useUserLoadParameters = true;
-        params->noFlash = cmdbuf[1] & 0xFF;
-        params->pluginMemoryStrategy = (cmdbuf[1] >> 8) & 0xFF;
-        params->persistent = (cmdbuf[1] >> 16) & 0x1;
-        params->lowTitleId = cmdbuf[2];
+            ctx->useUserLoadParameters = true;
+            params->noFlash = cmdbuf[1] & 0xFF;
+            params->pluginMemoryStrategy = (cmdbuf[1] >> 8) & 0xFF;
+            params->persistent = (cmdbuf[1] >> 16) & 0x1;
+            params->lowTitleId = cmdbuf[2];
 
-        strncpy(params->path, (const char *)cmdbuf[4], 255);
-        memcpy(params->config, (void *)cmdbuf[6], 32 * sizeof(u32));
+            strncpy(params->path, (const char *)cmdbuf[4], 255);
+            memcpy(params->config, (void *)cmdbuf[6], 32 * sizeof(u32));
 
-        if (params->persistent)
-        {
-            IFile file;
-            if (R_SUCCEEDED(IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, "/luma/plugins/user_param.bin"),
-                                       FS_OPEN_CREATE | FS_OPEN_READ | FS_OPEN_WRITE)))
+            if (params->persistent)
             {
-                u64 tempWritten;
-                u32 magic = PERS_USER_FILE_MAGIC;
-                IFile_Write(&file, &tempWritten, &magic, sizeof(magic), 0);
-                IFile_Write(&file, &tempWritten, params, sizeof(PluginLoadParameters), 0);
-                IFile_Close(&file);
+                IFile file;
+                if (R_SUCCEEDED(IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, "/luma/plugins/user_param.bin"),
+                                           FS_OPEN_CREATE | FS_OPEN_READ | FS_OPEN_WRITE))) {
+                    u64 tempWritten;
+                    u32 magic = PERS_USER_FILE_MAGIC;
+                    IFile_Write(&file, &tempWritten, &magic, sizeof(magic), 0);
+                    IFile_Write(&file, &tempWritten, params, sizeof(PluginLoadParameters), 0);
+                    IFile_Close(&file);
+                }
             }
-        }
 
         if (params->pluginMemoryStrategy == PLG_STRATEGY_MODE3)
             cmdbuf[1] = PluginLoader__SetMode3AppMode(true);
@@ -439,20 +427,20 @@ void PluginLoader__HandleCommands(void *_ctx)
         break;
     }
 
-    case 11: // Set rosalina menu block
-    {
-        if (cmdbuf[0] != IPC_MakeHeader(11, 1, 0))
+        case 11: // Set rosalina menu block
         {
-            error(cmdbuf, 0xD9001830);
+            if (cmdbuf[0] != IPC_MakeHeader(11, 1, 0))
+            {
+                error(cmdbuf, 0xD9001830);
+                break;
+            }
+
+            g_blockMenuOpen = cmdbuf[1];
+
+            cmdbuf[0] = IPC_MakeHeader(11, 1, 0);
+            cmdbuf[1] = 0;
             break;
         }
-
-        g_blockMenuOpen = cmdbuf[1];
-
-        cmdbuf[0] = IPC_MakeHeader(11, 1, 0);
-        cmdbuf[1] = 0;
-        break;
-    }
 
     case 12: // Set swap settings
     {
@@ -509,16 +497,16 @@ void PluginLoader__HandleCommands(void *_ctx)
             break;
         }
 
-        u32 *remoteLoadExeFuncAddr = (u32 *)(cmdbuf[1] | (1 << 31));
-        Result ret = Set_3gx_LoadParams(remoteLoadExeFuncAddr, (u32 *)cmdbuf[3]);
-        if (ret)
-        {
-            cmdbuf[1] = MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_TOO_LARGE);
-            Reset_3gx_LoadParams();
-            break;
-        }
+            u32* remoteLoadExeFuncAddr = (u32*)(cmdbuf[1] | (1 << 31));
+            Result ret = Set_3gx_LoadParams(remoteLoadExeFuncAddr, (u32*)cmdbuf[3]);
+            if (ret)
+            {
+                cmdbuf[1] = MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_TOO_LARGE);
+                Reset_3gx_LoadParams();
+                break;
+            }
 
-        ctx->isExeLoadFunctionset = true;
+            ctx->isExeLoadFunctionset = true;
 
         svcInvalidateEntireInstructionCache(); // Could use the range one
 
@@ -682,7 +670,7 @@ void PLG__WaitForReply(void)
     if (PluginLoaderCtx.eventsSelfManaged)
         return;
     __strex__(PluginLoaderCtx.plgReplyPA, PLG_WAIT);
-    svcArbitrateAddress(PluginLoaderCtx.arbiter, (u32)PluginLoaderCtx.plgReplyPA, ARBITRATION_WAIT_IF_LESS_THAN_TIMEOUT, PLG_OK, 10000000000ULL);
+    svcArbitrateAddress(PluginLoaderCtx.arbiter, (u32)PluginLoaderCtx.plgReplyPA, ARBITRATION_WAIT_IF_LESS_THAN_TIMEOUT, PLG_OK, MemoryBlock__GetMappedPluginHeader()->waitForReplyTimeout);
 }
 
 void PLG__SetConfigMemoryStatus(u32 status)
@@ -706,8 +694,7 @@ static void WaitForProcessTerminated(void *arg)
     PluginLoaderContext *ctx = &PluginLoaderCtx;
 
     // Wait until all threads of the process have finished (svcWaitSynchronization == 0) or 2.5 seconds have passed.
-    for (u32 i = 0; svcWaitSynchronization(ctx->target, 0) != 0 && i < 50; i++)
-        svcSleepThread(50000000); // 50ms
+    for (u32 i = 0; svcWaitSynchronization(ctx->target, 0) != 0 && i < 50; i++) svcSleepThread(50000000); // 50ms
 
     // Unmap plugin's memory before closing the process
     if (!ctx->pluginIsSwapped)
@@ -729,8 +716,6 @@ static void WaitForProcessTerminated(void *arg)
     ctx->isMemPrivate = false;
     g_blockMenuOpen = 0;
     MemoryBlock__ResetSwapSettings();
-    // if (!ctx->userLoadParameters.noIRPatch)
-    //     IR__Unpatch();
 }
 
 void PluginLoader__HandleKernelEvent(u32 notifId)

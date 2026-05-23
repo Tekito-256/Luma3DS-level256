@@ -289,8 +289,9 @@ void MiscellaneousMenu_InputRedirection(void)
                         posY,
                         COLOR_WHITE,
                         "This might cause a key press to be repeated in\n"
-                        "Home Menu for no reason.\n\n"
-                        "Just pressing ZL/ZR on the console is enough to fix\nthis.\n");
+                        "HOME Menu for no reason.\n\n"
+                        "Just pressing ZL/ZR on the console is enough to fix\nthis.\n"
+                    );
                 }
             }
             else
@@ -369,11 +370,6 @@ void MiscellaneousMenu_UpdateTimeDateNtp(void)
             res = ntpSetTimeDate(msSince1900, samplingTick);
         }
     }
-
-    Draw_Lock();
-    Draw_ClearFramebuffer();
-    Draw_FlushFramebuffer();
-    Draw_Unlock();
 
     do
     {
@@ -491,8 +487,9 @@ void MiscellaneousMenu_DumpDspFirm(void)
         else
             Draw_DrawFormattedString(
                 10, 30, COLOR_WHITE,
-                "Operation failed (0x%08lx).\n\nMake sure that Home Menu is running and that your\nSD card is inserted.",
-                res);
+                "Operation failed (0x%08lx).\n\nMake sure that HOME Menu is running and that your\nSD card is inserted.",
+                res
+            );
         Draw_FlushFramebuffer();
         Draw_Unlock();
     } while (!(waitInput() & KEY_B) && !menuShouldExit);

@@ -420,8 +420,30 @@ static Result SysConfigMenu_ApplyVolumeOverride(void)
     s8 i2s2Volume;
     if (currVolumeSliderOverride >= 0)
     {
-        i2s1Volume = -128 + (((float)currVolumeSliderOverride/100.f) * 108);
-        i2s2Volume = i2s1Volume;
+        // Considering I found this table inside MCU fw bin (at around offset 0x1200 in the raw bin):
+        // 127, 126, 125, ... 56
+        // which corresponds to round(127 - 71 * (i/63)) modulo some rounding error, it is certain
+        // that the MCU writes to "Page 0/Register 117: VOL/MICDET-Pin Gain" using linear interpolation
+        // to map the slider position (0..63) to the raw gain values, using 127 ("reserved") as "mute".
+        // Indeed, the value used in all calibration data for shutter volume is -10 dB, which maps to 56.
+
+        // However, if you look at the definition of reg 0,117 closely, you will notice that the mapping
+        // to the 7-bit value is piecewise, with half the resolution (double the slope) for values mapping
+        // to -28 dB or lower, which means that the slider increases volume twice as fast below 50% position.
+
+        // LERP like MCU does, round to nearest integer
+        u8 rawPinGain = 127 - (71 * currVolumeSliderOverride + 50) / 100;
+        s8 volume;
+
+        if (rawPinGain <= 90)
+            volume = 36 - rawPinGain;
+        else if (rawPinGain >= 91 && rawPinGain <= 126)
+            volume = 126 - 2 * rawPinGain;
+        else
+            volume = -128; // mute
+
+        i2s1Volume = volume;
+        i2s2Volume = volume;
     }
     else
     {
@@ -560,7 +582,7 @@ void SysConfigMenu_ChangeScreenBrightness(void)
         posY = Draw_DrawString(10, posY, COLOR_WHITE, "Press A to start, B to exit.\n\n");
 
         posY = Draw_DrawString(10, posY, COLOR_RED, "WARNING: \n");
-        posY = Draw_DrawString(10, posY, COLOR_WHITE, "  * value will be limited by the presets.\n");
+        posY = Draw_DrawString(10, posY, COLOR_WHITE, "  * value will be limited by calibration.\n");
         posY = Draw_DrawString(10, posY, COLOR_WHITE, "  * bottom framebuffer will be restored until\nyou exit.");
         Draw_FlushFramebuffer();
         Draw_Unlock();

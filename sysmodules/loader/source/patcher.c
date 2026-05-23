@@ -161,7 +161,7 @@ static u32 findFunctionStart(u8 *code, u32 pos)
     return 0xFFFFFFFF;
 }
 
-static inline bool findLayeredFsSymbols(u8 *code, u32 size, u32 *fsMountArchive, u32 *fsRegisterArchive, u32 *fsTryOpenFile, u32 *fsOpenFileDirectly)
+static inline bool findLayeredFsSymbols(u8 *code, u32 size, u32 *fsMountArchive, u32 *fsRegisterArchive, u32 *fsTryOpenFile, u32 *fsOpenFileDirectly, u32 *fsUnMountArchive)
 {
     u32 found = 0,
         *temp = NULL;
@@ -172,26 +172,27 @@ static inline bool findLayeredFsSymbols(u8 *code, u32 size, u32 *fsMountArchive,
 
         switch (*addr32)
         {
-        case 0xE5970010:
-            if (addr <= size - 12 && *fsMountArchive == 0xFFFFFFFF && addr32[1] == 0xE1CD20D8 && (addr32[2] & 0xFFFFFF) == 0x008D0000)
-                temp = fsMountArchive;
-            break;
-        case 0xE24DD028:
-            if (addr <= size - 16 && *fsMountArchive == 0xFFFFFFFF && addr32[1] == 0xE1A04000 && addr32[2] == 0xE59F60A8 && addr32[3] == 0xE3A0C001)
-                temp = fsMountArchive;
-            break;
-        case 0xE3500008:
-            if (addr <= size - 12 && *fsRegisterArchive == 0xFFFFFFFF && (addr32[1] & 0xFFF00FF0) == 0xE1800400 && (addr32[2] & 0xFFF00FF0) == 0xE1800FC0)
-                temp = fsRegisterArchive;
-            break;
-        case 0xE351003A:
-            if (addr <= size - 0x40 && *fsTryOpenFile == 0xFFFFFFFF && addr32[1] == 0x1AFFFFFC && addr32[0xD] == 0xE590C000 && addr32[0xF] == 0xE12FFF3C)
-                temp = fsTryOpenFile;
-            break;
-        case 0x08030204:
-            if (*fsOpenFileDirectly == 0xFFFFFFFF)
-                temp = fsOpenFileDirectly;
-            break;
+            case 0xE5970010:
+                if(addr <= size - 12 && *fsMountArchive == 0xFFFFFFFF && addr32[1] == 0xE1CD20D8 && (addr32[2] & 0xFFFFFF) == 0x008D0000) temp = fsMountArchive;
+                break;
+            case 0xE24DD028:
+                if(addr <= size - 16 && *fsMountArchive == 0xFFFFFFFF && addr32[1] == 0xE1A04000 && addr32[2] == 0xE59F60A8 && addr32[3] == 0xE3A0C001) temp = fsMountArchive;
+                break;
+            case 0xE2844001:
+                if(addr <= size - 12 && *fsUnMountArchive == 0xFFFFFFFF && addr32[1] == 0xE3540020 && addr32[2] == 0x3AFFFFF0) temp = fsUnMountArchive;
+                break;
+            case 0xE353003A:
+                if(addr <= size - 12 && *fsUnMountArchive == 0xFFFFFFFF && (addr32[1] & 0xFFFFFF0F) == 0x0A000009 && (addr32[2] & 0xFFFF0FF0) == 0xE1A00400) temp = fsUnMountArchive;
+                break;
+            case 0xE3500008:
+                if(addr <= size - 12 && *fsRegisterArchive == 0xFFFFFFFF && (addr32[1] & 0xFFF00FF0) == 0xE1800400 && (addr32[2] & 0xFFF00FF0) == 0xE1800FC0) temp = fsRegisterArchive;
+                break;
+            case 0xE351003A:
+                if(addr <= size - 0x40 && *fsTryOpenFile == 0xFFFFFFFF && addr32[1] == 0x1AFFFFFC && addr32[0xD] == 0xE590C000 && addr32[0xF] == 0xE12FFF3C) temp = fsTryOpenFile;
+                break;
+            case 0x08030204:
+                if(*fsOpenFileDirectly == 0xFFFFFFFF) temp = fsOpenFileDirectly;
+                break;
         }
 
         if (temp != NULL)
@@ -201,15 +202,14 @@ static inline bool findLayeredFsSymbols(u8 *code, u32 size, u32 *fsMountArchive,
             if (*temp != 0xFFFFFFFF)
             {
                 found++;
-                if (found == 4)
-                    break;
+                if(found == 5) break;
             }
 
             temp = NULL;
         }
     }
 
-    return found == 4;
+    return found == 5;
 }
 
 static inline bool findLayeredFsPayloadOffset(u8 *code, u32 size, u32 roSize, u32 dataSize, u32 roAddress, u32 dataAddress, u32 *payloadOffset, u32 *pathOffset, u32 *pathAddress)
@@ -521,7 +521,7 @@ static inline bool loadTitleLocaleConfig(u64 progId, u8 *mask, u8 *regionId, u8 
     if (fileSize >= 12)
         fileSize = 12;
 
-    char buf[12] = "------------";
+    char buf[12+1] = "------------";
     u64 total;
 
     if (R_FAILED(IFile_Read(&file, &total, buf, fileSize)))
@@ -620,6 +620,7 @@ static inline bool patchLayeredFs(u64 progId, u8 *code, u32 size, u32 textSize, 
         return true;
 
     u32 fsMountArchive = 0xFFFFFFFF,
+        fsUnMountArchive = 0xFFFFFFFF,
         fsRegisterArchive = 0xFFFFFFFF,
         fsTryOpenFile = 0xFFFFFFFF,
         fsOpenFileDirectly = 0xFFFFFFFF,
@@ -627,9 +628,8 @@ static inline bool patchLayeredFs(u64 progId, u8 *code, u32 size, u32 textSize, 
         pathOffset = 0,
         pathAddress = 0xDEADCAFE;
 
-    if (!findLayeredFsSymbols(code, textSize, &fsMountArchive, &fsRegisterArchive, &fsTryOpenFile, &fsOpenFileDirectly) ||
-        !findLayeredFsPayloadOffset(code, textSize, roSize, dataSize, roAddress, dataAddress, &payloadOffset, &pathOffset, &pathAddress))
-        return false;
+    if(!findLayeredFsSymbols(code, textSize, &fsMountArchive, &fsRegisterArchive, &fsTryOpenFile, &fsOpenFileDirectly, &fsUnMountArchive) ||
+       !findLayeredFsPayloadOffset(code, textSize, roSize, dataSize, roAddress, dataAddress, &payloadOffset, &pathOffset, &pathAddress)) return false;
 
     static const char *updateRomFsMounts[] = {"ro2:",
                                               "rom2:",
@@ -677,8 +677,9 @@ static inline bool patchLayeredFs(u64 progId, u8 *code, u32 size, u32 textSize, 
     romfsRedirPatchSubstituted2 = *(u32 *)(code + fsTryOpenFile);
     romfsRedirPatchHook2 = MAKE_BRANCH(payloadOffset + (u32)&romfsRedirPatchHook2 - (u32)romfsRedirPatch, fsTryOpenFile + 4);
     romfsRedirPatchCustomPath = pathAddress;
-    romfsRedirPatchFsMountArchive = 0x100000 + fsMountArchive;
-    romfsRedirPatchFsRegisterArchive = 0x100000 + fsRegisterArchive;
+    romfsRedirPatchFsMountArchive = MAKE_BRANCH_LINK(payloadOffset + (u32)&romfsRedirPatchFsMountArchive - (u32)romfsRedirPatch, fsMountArchive);
+    romfsRedirPatchFsUnMountArchive = MAKE_BRANCH_LINK(payloadOffset + (u32)&romfsRedirPatchFsUnMountArchive - (u32)romfsRedirPatch, fsUnMountArchive);
+    romfsRedirPatchFsRegisterArchive = MAKE_BRANCH_LINK(payloadOffset + (u32)&romfsRedirPatchFsRegisterArchive - (u32)romfsRedirPatch, fsRegisterArchive);
     romfsRedirPatchArchiveId = archiveId;
     memcpy(&romfsRedirPatchUpdateRomFsMount, updateRomFsMount, 4);
 
@@ -696,12 +697,12 @@ static inline bool patchLayeredFs(u64 progId, u8 *code, u32 size, u32 textSize, 
 
 void patchCode(u64 progId, u16 progVer, u8 *code, u32 size, u32 textSize, u32 roSize, u32 dataSize, u32 roAddress, u32 dataAddress)
 {
-    bool isHomeMenu = progId == 0x0004003000008F02LL || // USA Home Menu
-                      progId == 0x0004003000008202LL || // JPN Home Menu
-                      progId == 0x0004003000009802LL || // EUR Home Menu
-                      progId == 0x000400300000A902LL || // KOR Home Menu
-                      progId == 0x000400300000A102LL || // CHN Home Menu
-                      progId == 0x000400300000B102LL;   // TWN Home Menu
+    bool isHomeMenu = progId == 0x0004003000008F02LL || //USA HOME Menu
+                      progId == 0x0004003000008202LL || //JPN HOME Menu
+                      progId == 0x0004003000009802LL || //EUR HOME Menu
+                      progId == 0x000400300000A902LL || //KOR HOME Menu
+                      progId == 0x000400300000A102LL || //CHN HOME Menu
+                      progId == 0x000400300000B102LL;   //TWN HOME Menu
 
     bool isApp = ((progId >> 32) & ~0x12) == 0x00040000;
     bool isApplet = (progId >> 32) == 0x00040030;
@@ -713,16 +714,14 @@ void patchCode(u64 progId, u16 progVer, u8 *code, u32 size, u32 textSize, u32 ro
 
         switch (progId)
         {
-        case 0x0004003000008F02LL: // USA Home Menu
-        case 0x0004003000008202LL: // JPN Home Menu
-        case 0x0004003000009802LL: // EUR Home Menu
-            if (progVer <= 4)
-                applyRegionFreePatch = false;
-            break;
-        case 0x000400300000A902LL: // KOR Home Menu
-            if (!progVer)
-                applyRegionFreePatch = false;
-            break;
+            case 0x0004003000008F02LL: //USA HOME Menu
+            case 0x0004003000008202LL: //JPN HOME Menu
+            case 0x0004003000009802LL: //EUR HOME Menu
+                if(progVer <= 4) applyRegionFreePatch = false;
+                break;
+            case 0x000400300000A902LL: //KOR HOME Menu
+                if(!progVer) applyRegionFreePatch = false;
+                break;
         }
 
         if (applyRegionFreePatch)
@@ -775,39 +774,70 @@ void patchCode(u64 progId, u16 progVer, u8 *code, u32 size, u32 textSize, u32 ro
         off[1] = 0xE12FFF1E; // bx lr
     }
 
-    else if ((progId == 0x0004001000021000LL || // USA MSET
-              progId == 0x0004001000020000LL || // JPN MSET
-              progId == 0x0004001000022000LL || // EUR MSET
-              progId == 0x0004001000026000LL || // CHN MSET
-              progId == 0x0004001000027000LL || // KOR MSET
-              progId == 0x0004001000028000LL)   // TWN MSET
-             && CONFIG(PATCHVERSTRING))
+    else if((progId == 0x0004001000021000LL || //USA MSET
+             progId == 0x0004001000020000LL || //JPN MSET
+             progId == 0x0004001000022000LL || //EUR MSET
+             progId == 0x0004001000026000LL || //CHN MSET
+             progId == 0x0004001000027000LL || //KOR MSET
+             progId == 0x0004001000028000LL)) //TWN MSET
     {
-        static const u16 pattern[] = u"Ve";
-        const u16 *patch;
-        u32 patchSize = 0,
+        if (CONFIG(PATCHVERSTRING))
+        {
+            static const u16 pattern[] = u"Ve";
+            const u16 *patch;
+            u32 patchSize = 0,
             currentNand = BOOTCFG_NAND;
 
-        u16 customVerString[19];
-        loadCustomVerString(customVerString, &patchSize, currentNand);
+            u16 customVerString[19];
+            loadCustomVerString(customVerString, &patchSize, currentNand);
 
-        if (patchSize != 0)
-            patch = customVerString;
-        else
-        {
-            patchSize = 8;
+            if(patchSize != 0) patch = customVerString;
+            else
+            {
+                patchSize = 8;
 
-            static const u16 *const verStringNandEmu[] = {u" Emu", u"Emu2", u"Emu3", u"Emu4"};
-            patch = currentNand == 0 ? u" Sys" : verStringNandEmu[BOOTCFG_EMUINDEX];
+                static const u16 *const verStringNandEmu[] = { u" Emu", u"Emu2", u"Emu3", u"Emu4" };
+                patch = currentNand == 0 ? u" Sys" : verStringNandEmu[BOOTCFG_EMUINDEX];
+            }
+
+            //Patch Ver. string
+            if(!patchMemory(code, textSize,
+                    pattern,
+                    sizeof(pattern) - 2, 0,
+                    patch,
+                    patchSize, 1
+                )) goto error;
         }
 
-        // Patch Ver. string
-        if (!patchMemory(code, textSize,
-                         pattern,
-                         sizeof(pattern) - 2, 0,
-                         patch,
-                         patchSize, 1))
-            goto error;
+        // Allow date picker to select year up to 2099, not just 2050.
+        // NNID user's year-of-birth seems to have a similar restriction,
+        // I'm not removing that as long as any NNID stuff is still active.
+
+        // Patch date picker check on entry (date load):
+        // Look for:
+        // 32 00 5x E3 CMP             Rx, #0x32
+        // ...
+        // 32 x0 A0 C3 MOVGT           Rx, #0x32
+        u32 *off = (u32 *)code;
+        for (; (u8 *)off < code + textSize && ((off[0] & 0xFFF0FFFF) != 0xE3500032 || (off[2] & 0xFFFF0FFF) != 0xC3A00032); off++)
+        {
+            if (((off[0] >> 16) & 0xF) != ((off[2] >> 12) & 0xF)) // ensure same register used
+                continue;
+        }
+        if ((u8 *)off >= code + textSize) goto error;
+        off[0] = (off[0] & ~0xFF) | 99;
+        off[2] = (off[2] & ~0xFF) | 99;
+
+        // Patch date picker actions:
+        // Look for:
+        // 01 00 80 E2 ADD             R0, R0, #1
+        // 32 00 50 E3 CMP             R0, #0x32
+        off = (u32 *)code;
+        for (; (u8 *)off < code + textSize && (off[0] != 0xE2800001 || off[1] != 0xE3500032); off++);
+        if ((u8 *)off >= code + textSize) goto error;
+
+        off[1] = (off[1] & ~0xFF) | 99; // patch increment wrap-around compare instruction
+        off[9] = (off[9] & ~0xFF) | 99; // patch decrement wrap-around conditional move instruction
     }
 
     else if (progId == 0x0004013000008002LL) // NS
