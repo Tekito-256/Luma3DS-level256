@@ -472,6 +472,12 @@ static int configIniHandler(void* user, const char* section, const char* name, c
             CHECK_PARSE_OPTION(parseDecIntOption(&opt, value, -779, 899));
             cfg->ntpTzOffetMinutes = (s16)opt;
             return 1;
+        } else if (strcmp(name, "plugin_checker_enabled") == 0 ||
+                   strcmp(name, "plugin_watcher_enabled") == 0 ||
+                   strcmp(name, "plugin_watcher_level") == 0 ||
+                   strcmp(name, "use_cache_in_plugin_converter") == 0) {
+            // Written by the Level256 v1 firm; accept and ignore so the config isn't reset
+            return 1;
         } else {
             CHECK_PARSE_OPTION(-1);
         }

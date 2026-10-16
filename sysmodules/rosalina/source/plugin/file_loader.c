@@ -6,6 +6,7 @@
 #include "ifile.h"
 #include "ifile.h"
 #include "utils.h"
+#include "menu.h"
 
 // Use a global to avoid stack overflow, those structs are quite heavy
 static FS_DirectoryEntry   g_entries[10];
@@ -13,6 +14,7 @@ static FS_DirectoryEntry   g_entries[10];
 static char        g_path[256];
 static const char *g_dirPath = "/luma/plugins/%016llX";
 static const char *g_defaultPath = "/luma/plugins/default.3gx";
+static const char *g_level256PluginPath = "/luma/plugins/Level256_Network/Level256.3gx";
 
 // pluginLoader.s
 void        gamePatchFunc(void);
@@ -105,8 +107,74 @@ static Result   OpenFile(IFile *file, const char *path)
     return IFile_Open(file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, path), FS_OPEN_READ);
 }
 
+static bool     IsLevel256SupportedTitle(u64 tid)
+{
+    switch (tid)
+    {
+    case 0x000400000016C700ULL: // 赤猫団
+    case 0x000400000016C600ULL: // 白犬隊
+    case 0x00040000001CF000ULL: // Red cats (EUR)
+    case 0x00040000001CEC00ULL: // White dogs (EUR)
+    case 0x0004000000191000ULL: // スシ
+    case 0x0004000000191100ULL: // テンプラ
+    case 0x00040000001AF400ULL: // スキヤキ
+    case 0x000400000012F900ULL: // 元祖
+    case 0x000400000012F800ULL: // 本家
+    case 0x0004000000155100ULL: // 真打
+    case 0x00040000001B2900ULL: // 真打(EUR)
+    case 0x000400000019AB00ULL: // 元祖(EUR)
+    case 0x000400000019AC00ULL: // 本家(EUR)
+    case 0x000400000019AA00ULL: // 妖怪ウォッチ2 (USA)
+    case 0x000400000019A900ULL: // 妖怪ウォッチ2 (USA)
+    case 0x00040000001B2700ULL: // 妖怪ウォッチ2 真打 (USA)
+    case 0x00040000001D6800ULL: // 妖怪ウォッチ3 (EUR)
+    case 0x00040000001D6900ULL: // 妖怪ウォッチ3 France
+    case 0x00040000001D6A00ULL: // 妖怪ウォッチ3 German
+    case 0x00040000001D6B00ULL: // 妖怪ウォッチ3 Italy
+    case 0x00040000001D6C00ULL: // 妖怪ウォッチ3 Spain
+    case 0x00040000001D6700ULL: // 妖怪ウォッチ3 (USA)
+    case 0x00040000001CEB00ULL: // 妖怪ウォッチバスターズ (USA)
+    case 0x00040000001CEF00ULL: // 妖怪ウォッチバスターズ (USA)
+    case 0x000400000019B000ULL: // 妖怪ウォッチ2 (オーストラリア)
+    case 0x000400000019B100ULL: // 妖怪ウォッチ2 (オーストラリア)
+    case 0x00040000001B2800ULL: // 妖怪ウォッチ2真打 (オーストラリア)
+    case 0x000400000019AE00ULL: // 妖怪ウォッチ2 (Kor)
+    case 0x000400000019AF00ULL: // 妖怪ウォッチ2 (Kor)
+    case 0x00040000001B2A00ULL: // 妖怪ウォッチ2真打 (Kor)
+    case 0x00040000001CF200ULL: // 妖怪ウォッチバスターズ (Kor)
+    case 0x00040000001CED00ULL: // 妖怪ウォッチバスターズ (Kor)
+    case 0x00040000000CF400ULL: // 妖怪ウォッチ1
+    case 0x0004000000167800ULL: // 妖怪ウォッチ1 (EUR)
+    case 0x0004000000167700ULL: // 妖怪ウォッチ1 (USA)
+    case 0x000400000017C200ULL: // 妖怪ウォッチ1 (Au)
+    case 0x0004000000167600ULL: // 妖怪ウォッチ1 (Kor)
+    case 0x0004000000086200ULL: // とび森
+    case 0x0004000000198D00ULL: // とび森 Amiibo+
+    case 0x0004000000086400ULL: // とび森 (EUR)
+    case 0x0004000000198F00ULL: // とび森 (EUR) Amiibo+
+    case 0x0004000000086300ULL: // とび森 (USA)
+    case 0x0004000000198E00ULL: // とび森 (USA) Amiibo+
+    case 0x0004000000086500ULL: // とび森 (KOR)
+    case 0x0004000000199000ULL: // とび森 (KOR) Amiibo+
+    case 0x00040000001C9400ULL: // 妖怪ウォッチバスターズ2
+    case 0x00040000001C9C00ULL: // 妖怪ウォッチバスターズ2
+    case 0x000400000018B000ULL: // 妖怪三国志
+    case 0x0004000000197100ULL: // MHXX (JP)
+        return true;
+    default:
+        return false;
+    }
+}
+
 static Result   OpenPluginFile(u64 tid, IFile *plugin)
 {
+    // Level256 plugin takes priority on supported titles (hold SELECT to skip)
+    if (!(HID_PAD & KEY_SELECT) && IsLevel256SupportedTitle(tid) && R_SUCCEEDED(OpenFile(plugin, g_level256PluginPath)))
+    {
+        PluginLoaderCtx.pluginPath = g_level256PluginPath;
+        return 0;
+    }
+
     if (R_FAILED(FindPluginFile(tid)) || OpenFile(plugin, g_path))
     {
         // Try to open default plugin
