@@ -21,9 +21,9 @@ export HBLDR_DEFAULT_3DSX_TID ?= 000400000D921E00
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source
+SOURCES		:=	source Externals/monocypher
 DATA		:=	data
-INCLUDES	:=	include
+INCLUDES	:=	include Externals/monocypher
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -37,6 +37,8 @@ else
 endif
 
 BUILD_FOR_GDB  := 1
+
+LEVEL256_DEBUG ?= 0
 
 ifeq ($(BUILD_FOR_GDB),1)
 	OPTFLAGS := -O0
@@ -153,6 +155,14 @@ $(OUTPUT).cxi	:	$(OUTPUT).elf $(OUTPUT).rsf
 $(OUTPUT).elf	:	$(OFILES)
 
 memory.o	:	CFLAGS += -O3
+
+monocypher.o monocypher-ed25519.o	:	CFLAGS += -O2
+
+L256_FLAG_FILE	:=	$(shell v="$(LEVEL256_DEBUG)"; [ "$$(cat level256_debug.flag 2>/dev/null)" = "$$v" ] || echo "$$v" > level256_debug.flag; echo level256_debug.flag)
+l256_verify.o	:	$(L256_FLAG_FILE)
+ifeq ($(LEVEL256_DEBUG),1)
+l256_verify.o	:	CFLAGS += -DLEVEL256_DEBUG=1
+endif
 
 %.elf: $(OFILES)
 	@echo linking $(notdir $@)

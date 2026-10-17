@@ -14,7 +14,6 @@ bool isOnlineSupportedTitle(u64 titleId)
     case 0x000400000012F900ULL: // 元祖
     case 0x000400000012F800ULL: // 本家
     case 0x0004000000155100ULL: // 真打
-    // case 0x00040000001ADD00ULL: // 桃鉄
     case 0x00040000001B2900ULL: // 真打(EUR)
     case 0x000400000019AB00ULL: // 元祖(EUR)
     case 0x000400000019AC00ULL: // 本家(EUR)
@@ -55,6 +54,14 @@ bool isOnlineSupportedTitle(u64 titleId)
     case 0x000400000018B000ULL: // 妖怪三国志
     case 0x0004000000197100ULL: // MHXX(JP)
     //case 0x00040000001B8100ULL: // MHXX(TW)
+    case 0x00040000001B5000ULL:
+    case 0x00040000001B5100ULL:
+    case 0x0004000000164800ULL:
+    case 0x0004000000175E00ULL:
+    case 0x00040000001A0000ULL:
+    case 0x00040000001A8B00ULL:
+    case 0x00040000001C1800ULL:
+    case 0x0004000000101200ULL:
         return true;
     default:
         break;
@@ -108,6 +115,13 @@ bool isPatchProhibitedTitle(u64 titleId)
     case 0x000400000018B000ULL: // 妖怪三国志
     case 0x0004000000197100ULL: // MHXX(JP)
     //case 0x00040000001B8100ULL: // MHXX(TW)
+    case 0x00040000001B5000ULL:
+    case 0x00040000001B5100ULL:
+    case 0x0004000000164800ULL:
+    case 0x0004000000175E00ULL:
+    case 0x00040000001A0000ULL:
+    case 0x00040000001A8B00ULL:
+    case 0x00040000001C1800ULL:
                                 /*case 0x0004000000086200ULL: // とび森
                                 case 0x0004000000198D00ULL: // とび森 Amiibo+
                                 case 0x0004000000086400ULL: // とび森(EUR)

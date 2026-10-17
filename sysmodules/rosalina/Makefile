@@ -24,9 +24,11 @@ export HBLDR_DEFAULT_3DSX_TITLE_NAME ?= "hblauncher_loader"
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source source/gdb source/menus source/plugin source/redshift
+SOURCES		:=	source source/gdb source/menus source/plugin source/redshift ../loader/Externals/monocypher
 DATA		:=	source/gdb/xml data
-INCLUDES	:=	include include/gdb include/menus include/redshift
+INCLUDES	:=	include include/gdb include/menus include/redshift ../loader/Externals/monocypher
+
+LEVEL256_DEBUG ?= 0
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -138,6 +140,17 @@ $(OUTPUT).elf	:	$(OFILES)
 	@$(NM) -CSn $@ > $(notdir $*.lst)
 
 draw.o: CFLAGS += -O3
+
+rp_jpeg.o: CFLAGS += -O3
+rp_kcopy.o: CFLAGS += -O2 -mgeneral-regs-only -fno-tree-loop-distribute-patterns
+
+monocypher.o monocypher-ed25519.o	:	CFLAGS += -O2
+
+L256_FLAG_FILE	:=	$(shell v="$(LEVEL256_DEBUG)"; [ "$$(cat level256_debug.flag 2>/dev/null)" = "$$v" ] || echo "$$v" > level256_debug.flag; echo level256_debug.flag)
+menus.o	:	$(L256_FLAG_FILE)
+ifeq ($(LEVEL256_DEBUG),1)
+menus.o	:	CFLAGS += -DLEVEL256_DEBUG=1
+endif
 
 $(OFILES_SRC)	: $(HFILES_BIN)
 

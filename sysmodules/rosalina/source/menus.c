@@ -48,12 +48,16 @@ Menu rosalinaMenu = {
     {
         {"Take screenshot", METHOD, .method = &RosalinaMenu_TakeScreenshot},
         {"Screen filters...", MENU, .menu = &screenFiltersMenu},
+#ifdef LEVEL256_DEBUG
         {"Cheats...", METHOD, .method = &RosalinaMenu_Cheats},
+#endif
         {"", METHOD, .method = PluginLoader__MenuCallback},
         {"Plugin options...", MENU, .menu = &pluginOptionsMenu},
         {"New 3DS menu...", MENU, .menu = &N3DSMenu, .visibility = &menuCheckN3ds},
         {"Process list", METHOD, .method = &RosalinaMenu_ProcessList},
+#ifdef LEVEL256_DEBUG
         {"Debugger options...", MENU, .menu = &debuggerMenu},
+#endif
         {"System configuration...", MENU, .menu = &sysconfigMenu},
         {"Miscellaneous options...", MENU, .menu = &miscellaneousMenu},
         {"Save settings", METHOD, .method = &RosalinaMenu_SaveSettings},

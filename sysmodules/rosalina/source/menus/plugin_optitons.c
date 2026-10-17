@@ -37,7 +37,7 @@ void PluginChecker__UpdateMenu(void)
             "Plugin Checker: [Disabled]",
             "Plugin Checker: [Enabled]"};
 
-    rosalinaMenu.items[4].menu->items[0].title = status[PluginChecker_isEnabled];
+    pluginOptionsMenu.items[0].title = status[PluginChecker_isEnabled];
 }
 
 void PluginWatcher__MenuCallback(void)
@@ -63,7 +63,7 @@ void PluginWatcher__UpdateMenu(void)
         {
             "Plugin Watcher: [Disabled]",
             "Plugin Watcher: [Enabled]"};
-    rosalinaMenu.items[4].menu->items[0].title = status[PluginWatcher_isEnabled];
+    pluginOptionsMenu.items[0].title = status[PluginWatcher_isEnabled];
 }
 
 void PluginConverter__ToggleUseCacheFlag(void)
@@ -79,7 +79,7 @@ void PluginConverter__UpdateMenu(void)
         {
             "Use cache in plugin converter: [OFF]",
             "Use cache in plugin converter: [ON]"};
-    rosalinaMenu.items[4].menu->items[2].title = status[PluginConverter_UseCache];
+    pluginOptionsMenu.items[2].title = status[PluginConverter_UseCache];
 }
 
 void PluginWatcher_SetWatchLevel(void)

@@ -602,6 +602,19 @@ static Result CheckPluginCompatibility(_3gx_Header *header, u32 processTitle)
     return -1;
 }
 
+static const char *g_l256FileErrors[] =
+    {
+        "",
+        "Level256 plugin: couldn't read the file.\n(L256 13/1)",
+        "Level256 plugin: no manifest.\nInstall the Level256 v2 .3gx.\n(L256 13/2)",
+        "Level256 plugin: no manifest.\nInstall the Level256 v2 .3gx.\n(L256 13/3)",
+        "Level256 plugin: unsupported manifest.\nUpdate boot.firm and the .3gx together.\n(L256 13/4)",
+        "Level256 plugin: unsupported manifest.\nReinstall the .3gx.\n(L256 13/5)",
+        "Level256 plugin: the file is corrupted\nor was modified. Reinstall the .3gx.\n(L256 13/6)",
+        "Level256 plugin: the file is corrupted\nor was modified. Reinstall the .3gx.\n(L256 13/7)",
+        "Level256 plugin: couldn't get random bytes.\nReboot the console.\n(L256 13/8)",
+};
+
 bool     TryToLoadPlugin(Handle process, bool isHomebrew)
 {
     u64 tid;
@@ -631,6 +644,10 @@ bool     TryToLoadPlugin(Handle process, bool isHomebrew)
     memset(pluginHeader, 0, sizeof(PluginHeader));
     pluginHeader->magic = HeaderMagic;
 
+    ctx->isLevel256Plugin = false;
+    ctx->lfcsRequestCount = 0;
+    MemoryBlock__L256ClearSwapSecret();
+
     // Try to open plugin file
     if (ctx->useUserLoadParameters && (ctx->userLoadParameters.lowTitleId == 0 || (u32)tid == ctx->userLoadParameters.lowTitleId))
     {
@@ -652,6 +669,12 @@ bool     TryToLoadPlugin(Handle process, bool isHomebrew)
 
     if (R_FAILED((res = IFile_GetSize(&plugin, &fileSize))))
         ctx->error.message = "Couldn't get file size";
+
+    bool isLevel256File = ctx->pluginPath != NULL && strcmp(ctx->pluginPath, g_onlinePluginPath) == 0;
+    u32 l256Detail = L256_FILE_OK;
+
+    if (!res && isLevel256File && R_FAILED(res = Check_3gx_Level256Manifest(&plugin, fileSize, &l256Detail)))
+        ctx->error.message = g_l256FileErrors[l256Detail];
 
     if (!res && R_FAILED(res = Check_3gx_Magic(&plugin)))
     {
@@ -782,7 +805,7 @@ bool     TryToLoadPlugin(Handle process, bool isHomebrew)
         res = CheckPluginCompatibility(header, (u32)tid);
 
     // Read code
-    if (!res && R_FAILED(res = Read_3gx_LoadSegments(&plugin, header, ctx->memblock.memblock + sizeof(PluginHeader), isOnlinePlugin)))
+    if (!res && R_FAILED(res = Read_3gx_LoadSegments(&plugin, header, ctx->memblock.memblock + sizeof(PluginHeader))))
     {
         if (res == MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_NO_DATA))
             ctx->error.message = "This plugin requires a loading function.";
@@ -791,6 +814,12 @@ bool     TryToLoadPlugin(Handle process, bool isHomebrew)
         else
             ctx->error.message = "Couldn't read plugin's code";
     }
+
+    isLevel256File = isLevel256File && ctx->pluginPath != NULL
+                     && strcmp(ctx->pluginPath, g_onlinePluginPath) == 0;
+
+    if (!res && isLevel256File && R_FAILED(res = MemoryBlock__L256InitSwapSecret()))
+        ctx->error.message = g_l256FileErrors[L256_FILE_RANDOM];
 
     if (R_FAILED(res))
     {
@@ -849,11 +878,13 @@ bool     TryToLoadPlugin(Handle process, bool isHomebrew)
         goto exitFail;
 
     IFile_Close(&plugin);
+    ctx->isLevel256Plugin = isLevel256File;
     return true;
 
 exitFail:
     IFile_Close(&plugin);
     MemoryBlock__Free();
+    MemoryBlock__L256ClearSwapSecret();
 
     return false;
 }

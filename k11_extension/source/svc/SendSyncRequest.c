@@ -49,6 +49,7 @@ typedef struct
     bool isPaused;
     bool signalOnAttachProcess;
     bool signalOnDetachProcess;
+    bool dlpEnabled;
 } PlgUdsContext;
 
 #define REG32(addr) (*(vu32 *)(PA_PTR(addr)))
@@ -58,9 +59,27 @@ typedef struct
         break;                                                                       \
     }
 
+#define PU_RESULT_NOT_AUTHORIZED 0xD90007EA
+#define PU_CHECK_CALLER(idRight, allowed)               \
+    if (!(allowed))                                     \
+    {                                                   \
+        cmdbuf[0] = IPC_MakeHeader((idRight), 1, 0);    \
+        cmdbuf[1] = PU_RESULT_NOT_AUTHORIZED;           \
+        skip = true;                                    \
+        break;                                          \
+    }
+#define PU_RESULT_OUT_OF_RANGE 0xD90007FD
+
 static inline bool isNdmuWorkaround(const SessionInfo *info, u32 pid)
 {
     return info != NULL && strcmp(info->name, "ndm:u") == 0 && hasStartedRosalinaNetworkFuncsOnce && pid >= nbSection0Modules;
+}
+
+static bool plgSwappedForLibraryApplet = false;
+
+static inline bool isAptWakeupCommand(u32 command)
+{
+    return command == 1 || (command >= 10 && command <= 15) || command == 17;
 }
 
 int InterruptiveRequest_Init(InterruptiveRequest *ctx, const char *port, u32 *cmdbuf)
@@ -120,7 +139,27 @@ bool PLGUDS_IsConnectedProcess(PlgUdsContext *ctx, u32 pid)
     return ctx->processId == pid && !ctx->isLogMode;
 }
 
-bool PLGUDS_ProcessCommands(PlgUdsContext *ctx, u32 *cmdbuf, u32 *staticBuf)
+static const char *PLGUDS_RedirectTarget(const PlgUdsContext *ctx, const char *name)
+{
+    if (ctx->isPaused)
+        return NULL;
+
+    if (strcmp(name, "nwm::UDS") == 0)
+        return "plg:UDS";
+
+    if (!ctx->dlpEnabled)
+        return NULL;
+
+    if (strcmp(name, "dlp:SRVR") == 0)
+        return "plg:DLP";
+
+    if (strcmp(name, "dlp:FKCL") == 0 || strcmp(name, "dlp:CLNT") == 0)
+        return "plg:FKCL";
+
+    return NULL;
+}
+
+bool PLGUDS_ProcessCommands(PlgUdsContext *ctx, u32 *cmdbuf, u32 *staticBuf, u32 pid)
 {
     bool skip = false;
 
@@ -174,25 +213,44 @@ bool PLGUDS_ProcessCommands(PlgUdsContext *ctx, u32 *cmdbuf, u32 *staticBuf)
         break;
     case 100: // PLGUDS_Initialize
         PU_CHECK_HEADER(100, 2, 0);
+        PU_CHECK_CALLER(100, cmdbuf[1] == pid);
         ctx->processId = cmdbuf[1];
         ctx->isLogMode = (cmdbuf[2] == 1);
         ctx->signalOnAttachProcess = false;
+        ctx->dlpEnabled = false;
         break;
     case 101: // PLGUDS_Finalize
         PU_CHECK_HEADER(101, 0, 0);
+        PU_CHECK_CALLER(101, ctx->processId == pid);
         ctx->processId = 0;
         ctx->isLogMode = false;
         ctx->signalOnAttachProcess = false;
+        ctx->dlpEnabled = false;
         break;
     case 104: // PLGUDS_SetSignalState
         PU_CHECK_HEADER(104, 1, 0);
+        PU_CHECK_CALLER(104, ctx->processId == pid);
         ctx->signalOnAttachProcess = (cmdbuf[1] != 0);
         skip = true; // PLGUDSに送信する必要がない。むしろPLGUDS自体が送信する場合があるので送信すべきでない。
         break;
     case 105: // PLGUDS_SetPause
         PU_CHECK_HEADER(105, 1, 0);
+        PU_CHECK_CALLER(105, ctx->processId == pid);
         ctx->isPaused = (cmdbuf[1] != 0);
         skip = true;
+        break;
+    case 106:
+        PU_CHECK_HEADER(106, 1, 0);
+        PU_CHECK_CALLER(106, ctx->processId == pid);
+        skip = true;
+        cmdbuf[0] = IPC_MakeHeader(106, 1, 0);
+        if (cmdbuf[1] > 1)
+        {
+            cmdbuf[1] = PU_RESULT_OUT_OF_RANGE;
+            break;
+        }
+        ctx->dlpEnabled = (cmdbuf[1] != 0);
+        cmdbuf[1] = 0;
         break;
     default:
         break;
@@ -291,12 +349,11 @@ Result SendSyncRequestHook(Handle handle)
                 // PLGUDS
                 if (strcmp(info->name, "plg:UDS") == 0)
                 {
-                    skip = PLGUDS_ProcessCommands(&plgUdsContext, cmdbuf, staticBuf);
+                    skip = PLGUDS_ProcessCommands(&plgUdsContext, cmdbuf, staticBuf, pid);
                 }
             }
 
-            // Log mode
-            if (plgUdsContext.isLogMode && info != NULL && strcmp(info->name, "nwm::UDS") == 0)
+            if (plgUdsContext.isLogMode && plgUdsContext.processId == pid && info != NULL && strcmp(info->name, "nwm::UDS") == 0)
             {
                 PLGUDS_Log(cmdbuf);
             }
@@ -364,13 +421,21 @@ Result SendSyncRequestHook(Handle handle)
                 char name[9] = {0};
                 memcpy(name, cmdbuf + 1, 8);
 
-                if (PLGUDS_IsConnectedProcess(&plgUdsContext, pid) && !plgUdsContext.isPaused && strcmp(name, "nwm::UDS") == 0)
+                if (PLGUDS_IsConnectedProcess(&plgUdsContext, pid))
                 {
-                    const char *plgUds = "plg:UDS";
-                    memcpy(cmdbuf + 1, plgUds, 8);
-                    strncpy(name, plgUds, 8);
+                    const char *target = PLGUDS_RedirectTarget(&plgUdsContext, name);
 
-                    cmdbuf[3] = 7;
+                    if (target != NULL)
+                    {
+                        u32 length = strlen(target);
+
+                        memset(cmdbuf + 1, 0, 8);
+                        memcpy(cmdbuf + 1, target, length);
+                        memset(name, 0, sizeof(name));
+                        memcpy(name, target, length);
+
+                        cmdbuf[3] = length;
+                    }
                 }
 
                 skip = true;
@@ -452,9 +517,42 @@ Result SendSyncRequestHook(Handle handle)
                     u32 plgStatus = PLG_GetStatus();
                     u32 command = cmdbuf[3];
 
-                    if ((plgStatus == PLG_CFG_RUNNING && command == 3)                        // COMMAND_RESPONSE
+                    if (plgStatus != PLG_CFG_INHOME)
+                        plgSwappedForLibraryApplet = false;
+
+                    if (plgSwappedForLibraryApplet)
+                    {
+                        if ((s32)cmdbuf[1] >= 0 && isAptWakeupCommand(command))
+                        {
+                            plgSwappedForLibraryApplet = false;
+                            PLG_SignalEvent(PLG_CFG_HOME_EVENT);
+                        }
+                    }
+                    else if ((plgStatus == PLG_CFG_RUNNING && command == 3)
                         || (plgStatus == PLG_CFG_INHOME && (command >= 10 || command <= 12))) // COMMAND_WAKEUP_BY_EXIT || COMMAND_WAKEUP_BY_PAUSE
                         PLG_SignalEvent(PLG_CFG_HOME_EVENT);
+                }
+            }
+            break;
+        }
+
+        case 0x00180040:
+        {
+            SessionInfo *info = SessionInfo_Lookup(clientSession->parentSession);
+
+            if (!isN3DS && info != NULL && strncmp(info->name, "APT:", 4) == 0
+                && (KPROCESS_GET_RVALUE(currentProcess, customFlags) & SignalOnExit) && PLG_GetStatus() == PLG_CFG_RUNNING)
+            {
+                PLG_SignalEvent(PLG_CFG_HOME_EVENT);
+                plgSwappedForLibraryApplet = PLG_GetStatus() == PLG_CFG_INHOME;
+
+                res = SendSyncRequest(handle);
+                skip = true;
+
+                if (plgSwappedForLibraryApplet && (res < 0 || (s32)cmdbuf[1] < 0))
+                {
+                    plgSwappedForLibraryApplet = false;
+                    PLG_SignalEvent(PLG_CFG_HOME_EVENT);
                 }
             }
             break;

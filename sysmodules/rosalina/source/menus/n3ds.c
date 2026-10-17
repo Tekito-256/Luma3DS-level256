@@ -28,6 +28,7 @@
 #include <math.h>
 #include "fmt.h"
 #include "menus/n3ds.h"
+#include "menus/streaming.h"
 #include "memory.h"
 #include "menu.h"
 #include "n3ds.h"
@@ -46,6 +47,7 @@ Menu N3DSMenu = {
         { "Temporarily disable Super-Stable 3D", METHOD, .method = &N3DSMenu_ToggleSs3d, .visibility = &N3DSMenu_CheckNotN2dsXl },
         { "Test parallax barrier positions", METHOD, .method = &N3DSMenu_TestBarrierPositions, .visibility = &N3DSMenu_CheckNotN2dsXl },
         { "Super-Stable 3D calibration", METHOD, .method = &N3DSMenu_Ss3dCalibration, .visibility = &N3DSMenu_CheckNotN2dsXl },
+        { "Wireless streaming...", METHOD, .method = &N3DSMenu_Streaming },
         {},
     }
 };

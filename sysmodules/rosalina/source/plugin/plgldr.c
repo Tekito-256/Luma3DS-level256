@@ -289,6 +289,45 @@ Result  PLGLDR__SetExeLoadSettings(void* loadFunc, void* args)
 }
 
 
+Result  PLGLDR__GetDeviceLfcsBlob(u8 *out, u32 *source)
+{
+    Result res = 0;
+
+    u32 *cmdbuf = getThreadCommandBuffer();
+
+    cmdbuf[0] = IPC_MakeHeader(L256_PLGLDR_GET_DEVICE_LFCS_BLOB, 0, 4);
+    cmdbuf[1] = IPC_Desc_CurProcessId();
+    cmdbuf[2] = 0;
+    cmdbuf[3] = IPC_Desc_Buffer(L256_LFCS_BLOB_SIZE, IPC_BUFFER_W);
+    cmdbuf[4] = (u32)out;
+
+    if (R_SUCCEEDED((res = svcSendSyncRequest(plgLdrHandle))))
+    {
+        res = cmdbuf[1];
+        if (source)
+            *source = (cmdbuf[0] == IPC_MakeHeader(L256_PLGLDR_GET_DEVICE_LFCS_BLOB, 2, 2)) ? cmdbuf[2] : 0;
+    }
+    return res;
+}
+
+Result  PLGLDR__GetRandomBytes(u8 *out, u32 size)
+{
+    Result res = 0;
+
+    u32 *cmdbuf = getThreadCommandBuffer();
+
+    cmdbuf[0] = IPC_MakeHeader(L256_PLGLDR_GET_RANDOM_BYTES, 1, 2);
+    cmdbuf[1] = size;
+    cmdbuf[2] = IPC_Desc_Buffer(size, IPC_BUFFER_W);
+    cmdbuf[3] = (u32)out;
+
+    if (R_SUCCEEDED((res = svcSendSyncRequest(plgLdrHandle))))
+    {
+        res = cmdbuf[1];
+    }
+    return res;
+}
+
 void    PLGLDR__SetEventCallback(OnPlgLdrEventCb_t cb)
 {
     onPlgLdrEventCb = cb;

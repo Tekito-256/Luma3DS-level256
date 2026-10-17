@@ -78,10 +78,26 @@ enum _3gx_Compatibility
     PLG_COMPAT_CONSOLE_EMULATOR = 2,
 };
 
+enum
+{
+    L256_FILE_OK = 0,
+    L256_FILE_READ = 1,
+    L256_FILE_TOO_SMALL = 2,
+    L256_FILE_MAGIC = 3,
+    L256_FILE_FORMAT_VERSION = 4,
+    L256_FILE_ARTIFACT_TYPE = 5,
+    L256_FILE_PAYLOAD_LEN = 6,
+    L256_FILE_PAYLOAD_HASH = 7,
+    L256_FILE_RANDOM = 8,
+};
+
+#define L256_FILE_RESULT(detail) MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, 0x130 + (detail))
+
 Result Check_3gx_Magic(IFile *file);
+Result Check_3gx_Level256Manifest(IFile *file, u64 fileSize, u32 *detail);
 Result Read_3gx_Header(IFile *file, _3gx_Header *header);
 Result Read_3gx_ParseHeader(IFile *file, _3gx_Header *header);
-Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst, bool isOnlinePlugin);
+Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst);
 Result Read_3gx_EmbeddedPayloads(IFile *file, _3gx_Header *header);
 Result Set_3gx_LoadParams(u32 *loadFunc, u32 *params);
 void Reset_3gx_LoadParams(void);

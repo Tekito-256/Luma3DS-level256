@@ -7,6 +7,11 @@
 
 #define  HeaderMagic (0x24584733) /* "3GX$" */
 
+#define  L256_PLGLDR_GET_DEVICE_LFCS_BLOB   0x2560
+#define  L256_PLGLDR_GET_RANDOM_BYTES       0x2561
+#define  L256_LFCS_BLOB_SIZE                0x110
+#define  L256_RANDOM_BYTES_MAX              64
+
 typedef struct
 {
     bool    noFlash;
@@ -77,5 +82,7 @@ Result  PLGLDR__SetRosalinaMenuBlock(bool shouldBlock);
 Result  PLGLDR__SetSwapSettings(char* swapPath, void* saveFunc, void* loadFunc, void* args);
 Result  PLGLDR__SetExeLoadSettings(void* loadFunc, void* args);
 Result  PLGLDR__GetVersion(u32 *version);
+Result  PLGLDR__GetDeviceLfcsBlob(u8 *out, u32 *source);
+Result  PLGLDR__GetRandomBytes(u8 *out, u32 size);
 void    PLGLDR__SetEventCallback(OnPlgLdrEventCb_t cb);
 void    PLGLDR__Status(void);

@@ -18,6 +18,7 @@ static u32 socContextSize = 0x60000;
 static Handle miniSocHandle;
 static Handle miniSocMemHandle;
 static bool exclusiveStateEntered = false;
+static bool ndmWorkaroundRaised = false;
 
 bool miniSocEnabled = false;
 
@@ -90,10 +91,31 @@ void miniSocUnlockState(bool force)
     }
 }
 
+static void raiseNdmWorkaround(void)
+{
+    if(!ndmWorkaroundRaised)
+    {
+        svcKernelSetState(0x10000, 0x10);
+        ndmWorkaroundRaised = true;
+    }
+}
+
 Result miniSocInit(void)
 {
+    return miniSocInitEx(true);
+}
+
+Result miniSocInitEx(bool lockNdmState)
+{
     if(AtomicPostIncrement(&miniSocRefCount))
+    {
+        if(lockNdmState)
+        {
+            miniSocLockState();
+            raiseNdmWorkaround();
+        }
         return 0;
+    }
 
     u32 tmp = 0;
     Result ret = 0;
@@ -123,9 +145,12 @@ Result miniSocInit(void)
     ret = SOCU_Initialize(miniSocMemHandle, socContextSize);
     if(ret != 0) goto cleanup;
 
-    miniSocLockState();
+    if(lockNdmState)
+    {
+        miniSocLockState();
+        raiseNdmWorkaround();
+    }
 
-    svcKernelSetState(0x10000, 0x10);
     miniSocEnabled = true;
 
     return 0;
@@ -171,7 +196,11 @@ Result miniSocExitDirect(void)
         miniSocUnlockState(false);
 
         miniSocEnabled = false;
-        svcKernelSetState(0x10000, 0x10);
+        if(ndmWorkaroundRaised)
+        {
+            svcKernelSetState(0x10000, 0x10);
+            ndmWorkaroundRaised = false;
+        }
     }
     return ret;
 }

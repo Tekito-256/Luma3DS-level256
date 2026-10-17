@@ -6,7 +6,7 @@
 #include "util.h"
 #include "hbldr.h"
 #include "csvc.h"
-#include "crc32.h"
+#include "l256_verify.h"
 
 #include "../../../global/level256/config.h"
 
@@ -283,8 +283,10 @@ Result PLGLDR__IsPluginLoaderEnabled(bool *isEnabled)
 }
 
 // Try to load a plugin for the game
-static Result PLGLDR_LoadPlugin(u32 processID, bool isHomebrew)
+static Result PLGLDR_LoadPlugin(u32 processID, bool isHomebrew, bool *requested)
 {
+    *requested = false;
+
     // Special case handling: games rebooting the 3DS on old models
     if (!isN3DS && g_exheaderInfo.aci.local_caps.core_info.o3ds_system_mode > 0)
     {
@@ -297,6 +299,8 @@ static Result PLGLDR_LoadPlugin(u32 processID, bool isHomebrew)
             return 0;
         }
     }
+
+    *requested = true;
 
     u32 *cmdbuf = getThreadCommandBuffer();
 
@@ -420,16 +424,6 @@ static Result PLGLDR__GetPluginPath(char *path)
     return svcSendSyncRequest(plgldrHandle);
 }
 
-void die(void)
-{
-    *(u32 *)0 = 0;
-
-    for(;;);
-}
-
-static vu32 PluginCrc32 = (vu32)LEVEL256_PLUGIN_CRC32;
-static vu32 PluginCodeSize = (vu32)LEVEL256_PLUGIN_CODE_SECTION_SIZE;
-
 static Result LoadProcessImpl(Handle *outProcessHandle, const ExHeader_Info *exhi, u64 programHandle)
 {
     const ExHeader_CodeSetInfo *csi = &exhi->sci.codeset_info;
@@ -494,34 +488,18 @@ static Result LoadProcessImpl(Handle *outProcessHandle, const ExHeader_Info *exh
             if (!res && ((u32)((titleId >> 0x20) & 0xFFFFFFEDULL) == 0x00040000))
             {
                 u32 processID;
+                bool pluginRequested;
                 char path[256];
                 memset(path, 0, sizeof(path));
                 assertSuccess(svcGetProcessId(&processID, *outProcessHandle));
                 assertSuccess(plgldrInit());
-                assertSuccess(PLGLDR_LoadPlugin(processID, isHomebrew));
+                assertSuccess(PLGLDR_LoadPlugin(processID, isHomebrew, &pluginRequested));
 
-                assertSuccess(PLGLDR__GetPluginPath(path));
-                if (path[0] != '\0' && strncmp(path, LEVEL256_PLUGIN_PATH, sizeof(LEVEL256_PLUGIN_PATH)) == 0)
+                if (pluginRequested)
                 {
-                    u32 mapSize = (PluginCodeSize + 0x2000) & ~0xFFF;
-                    Result res = svcMapProcessMemoryEx(CUR_PROCESS_HANDLE, 0x07000000, *outProcessHandle, 0x07000000, mapSize, 0);
-                    if (res < 0)
-                    {
-                        die();
-                    }
-
-                    u32 crc = calc_crc32((char *)0x07000100, PluginCodeSize);
-
-                    if (crc != (u32)PluginCrc32)
-                    {
-                        die();
-                    }
-
-                    res = svcUnmapProcessMemoryEx(CUR_PROCESS_HANDLE, 0x07000000, mapSize);
-                    if (res < 0)
-                    {
-                        die();
-                    }
+                    assertSuccess(PLGLDR__GetPluginPath(path));
+                    if (path[0] != '\0' && strncmp(path, LEVEL256_PLUGIN_PATH, sizeof(LEVEL256_PLUGIN_PATH)) == 0)
+                        l256_verify_plugin(*outProcessHandle);
                 }
 
                 plgldrExit();

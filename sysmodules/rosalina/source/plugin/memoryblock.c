@@ -2,14 +2,47 @@
 #include <string.h>
 #include <stdio.h>
 #include "plugin.h"
+#include "plugin/l256_lfcs.h"
 #include "ifile.h"
 #include "utils.h"
+#include "monocypher.h"
 
 #define MEMPERM_RW (MEMPERM_READ | MEMPERM_WRITE)
 
 u32  g_loadSaveSwapArgs[4];
 char g_swapFileName[256];
 u32  g_memBlockSize = 5 * 1024 * 1024;
+
+static u8   g_l256SwapSecret[32];
+static u64  g_l256SwapCounter;
+static u8   g_l256SwapTag[16];
+
+Result      MemoryBlock__L256InitSwapSecret(void)
+{
+    g_l256SwapCounter = 0;
+    crypto_wipe(g_l256SwapTag, sizeof(g_l256SwapTag));
+    return L256_GetRandomBytes(g_l256SwapSecret, sizeof(g_l256SwapSecret));
+}
+
+void        MemoryBlock__L256ClearSwapSecret(void)
+{
+    crypto_wipe(g_l256SwapSecret, sizeof(g_l256SwapSecret));
+    crypto_wipe(g_l256SwapTag, sizeof(g_l256SwapTag));
+    g_l256SwapCounter = 0;
+}
+
+static void L256_SwapTag(u8 *tag, u64 counter)
+{
+    u8 key[32];
+    u8 counterLe[8];
+
+    for (u32 i = 0; i < sizeof(counterLe); i++)
+        counterLe[i] = (u8)(counter >> (8 * i));
+
+    crypto_blake2b_keyed(key, sizeof(key), g_l256SwapSecret, sizeof(g_l256SwapSecret), counterLe, sizeof(counterLe));
+    crypto_poly1305(tag, PluginLoaderCtx.memblock.memblock, g_memBlockSize, key);
+    crypto_wipe(key, sizeof(key));
+}
 
 extern bool PluginWatcher_isRunning;
 extern bool PluginWatcher_isEnabled;
@@ -74,8 +107,17 @@ Result      MemoryBlock__IsReady(void)
     else
     {
         memblock->isAppRegion = false;
-        res = svcControlMemoryUnsafe((u32 *)&memblock->memblock, 0x07000000,
-                                    g_memBlockSize, MEMOP_REGION_SYSTEM | MEMOP_ALLOC | MEMOP_LINEAR_FLAG, MEMPERM_RW);
+
+        u32 retries = ctx->pluginIsSwapped ? 100 : 0;
+
+        for (;;)
+        {
+            res = svcControlMemoryUnsafe((u32 *)&memblock->memblock, 0x07000000,
+                                        g_memBlockSize, MEMOP_REGION_SYSTEM | MEMOP_ALLOC | MEMOP_LINEAR_FLAG, MEMPERM_RW);
+            if (R_SUCCEEDED(res) || retries-- == 0)
+                break;
+            svcSleepThread(50 * 1000 * 1000LL);
+        }
     }
 
     if (R_FAILED(res)) {
@@ -154,6 +196,10 @@ Result      MemoryBlock__ToSwapFile(void)
         PluginLoader__Error("CRITICAL: Swap save function\nis not set.\n\nConsole will now reboot.", res);
         svcKernelSetState(7);
     }
+
+    if (ctx->isLevel256Plugin)
+        L256_SwapTag(g_l256SwapTag, ++g_l256SwapCounter);
+
     ctx->swapLoadChecksum = saveSwapFunc(memblock->memblock, memblock->memblock + g_memBlockSize, g_loadSaveSwapArgs);
     
     res = IFile_Write(&file, &written, memblock->memblock, toWrite, FS_WRITE_FLUSH);
@@ -197,9 +243,20 @@ Result      MemoryBlock__FromSwapFile(void)
     if (checksum != ctx->swapLoadChecksum) {
         res = -1;
         PluginLoader__Error("CRITICAL: Swap file is corrupted.\n\nConsole will now reboot.", res);
-        svcKernelSetState(7); 
+        svcKernelSetState(7);
     }
-    
+
+    if (ctx->isLevel256Plugin) {
+        u8 tag[16];
+
+        L256_SwapTag(tag, g_l256SwapCounter);
+        if (crypto_verify16(tag, g_l256SwapTag) != 0) {
+            res = MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, 0x141);
+            PluginLoader__Error("CRITICAL: Level256 swap file was modified.\n(L256 14/1)\n\nConsole will now reboot.", res);
+            svcKernelSetState(7);
+        }
+    }
+
     svcFlushDataCacheRange(memblock->memblock, g_memBlockSize);
     IFile_Close(&file);
     return res;

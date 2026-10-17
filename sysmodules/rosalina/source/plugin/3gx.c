@@ -4,8 +4,19 @@
 #include "plugin.h"
 #include "ifile.h"
 #include "utils.h"
+#include "monocypher.h"
 
 u32 g_loadExeArgs[0x4];
+
+#define L256_MANIFEST_SIZE              168
+#define L256_MANIFEST_FORMAT_VERSION    1
+#define L256_MANIFEST_ARTIFACT_3GX      1
+#define L256_OFF_FORMAT_VERSION         8
+#define L256_OFF_ARTIFACT_TYPE          12
+#define L256_OFF_PAYLOAD_HASH           32
+#define L256_OFF_PAYLOAD_LEN            64
+
+static const u8 g_l256ManifestMagic[8] = { 'L', '2', '5', '6', 'M', 'A', 'N', 0x01 };
 
 static inline u32 invertEndianness(u32 val)
 {
@@ -90,31 +101,75 @@ Result Read_3gx_ParseHeader(IFile *file, _3gx_Header *header)
     return res;
 }
 
-void DecryptOnlinePlugin(u32 *out, const u32 *data, u32 size)
+static inline u32 readLe32(const u8 *p)
 {
-    u32 key = 0x63DA901F;
-    u32 key2 = 0x480C9A12;
-    u32 key3 = 0x5AE007DF;
-
-    for (u32 i = 0; i < size / 4; i++)
-    {
-        out[i] = ~data[i];
-    }
-
-    u32 nextKey = key;
-    u32 addKey = key;
-
-    for (u32 i = 0; i < size / 4; i++)
-    {
-        u32 curKey = nextKey;
-        nextKey = out[i] ^ (key + addKey);
-        addKey += out[i] ^ key2;
-        out[i] ^= i * (key3 + curKey);
-        out[i] = (out[i] ^ curKey);
-    }
+    u32 v;
+    memcpy(&v, p, sizeof(v));
+    return v;
 }
 
-Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst, bool isOnlinePlugin)
+static Result L256_FileError(u32 *detail, u32 failed, Result res)
+{
+    *detail = failed;
+    return R_FAILED(res) ? res : (Result)L256_FILE_RESULT(failed);
+}
+
+Result Check_3gx_Level256Manifest(IFile *file, u64 fileSize, u32 *detail)
+{
+    static u8 manifest[L256_MANIFEST_SIZE];
+    static u8 chunk[0x8000];
+    static crypto_blake2b_ctx hashCtx;
+    u8 digest[32];
+    u64 total;
+    Result res;
+
+    *detail = L256_FILE_OK;
+
+    if (fileSize < L256_MANIFEST_SIZE)
+        return L256_FileError(detail, L256_FILE_TOO_SMALL, 0);
+
+    u32 payloadLen = (u32)(fileSize - L256_MANIFEST_SIZE);
+
+    file->pos = payloadLen;
+    res = IFile_Read(file, &total, manifest, L256_MANIFEST_SIZE);
+    if (R_FAILED(res) || total != L256_MANIFEST_SIZE)
+        return L256_FileError(detail, L256_FILE_READ, res);
+
+    if (memcmp(manifest, g_l256ManifestMagic, sizeof(g_l256ManifestMagic)) != 0)
+        return L256_FileError(detail, L256_FILE_MAGIC, 0);
+    if (readLe32(manifest + L256_OFF_FORMAT_VERSION) != L256_MANIFEST_FORMAT_VERSION)
+        return L256_FileError(detail, L256_FILE_FORMAT_VERSION, 0);
+    if (readLe32(manifest + L256_OFF_ARTIFACT_TYPE) != L256_MANIFEST_ARTIFACT_3GX)
+        return L256_FileError(detail, L256_FILE_ARTIFACT_TYPE, 0);
+    if (readLe32(manifest + L256_OFF_PAYLOAD_LEN) != payloadLen)
+        return L256_FileError(detail, L256_FILE_PAYLOAD_LEN, 0);
+
+    crypto_blake2b_init(&hashCtx, sizeof(digest));
+    file->pos = 0;
+    for (u32 left = payloadLen; left != 0;)
+    {
+        u32 size = left < sizeof(chunk) ? left : sizeof(chunk);
+
+        res = IFile_Read(file, &total, chunk, size);
+        if (R_FAILED(res) || total != size)
+        {
+            crypto_wipe(&hashCtx, sizeof(hashCtx));
+            return L256_FileError(detail, L256_FILE_READ, res);
+        }
+
+        crypto_blake2b_update(&hashCtx, chunk, size);
+        left -= size;
+    }
+    crypto_blake2b_final(&hashCtx, digest);
+    file->pos = 0;
+
+    if (crypto_verify32(digest, manifest + L256_OFF_PAYLOAD_HASH) != 0)
+        return L256_FileError(detail, L256_FILE_PAYLOAD_HASH, 0);
+
+    return 0;
+}
+
+Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst)
 {
     u32 size;
     u64 total;
@@ -125,11 +180,6 @@ Result Read_3gx_LoadSegments(IFile *file, _3gx_Header *header, void *dst, bool i
     file->pos = exeHdr->codeOffset;
     size = exeHdr->codeSize + exeHdr->rodataSize + exeHdr->dataSize;
     res = IFile_Read(file, &total, dst, size);
-
-    if (isOnlinePlugin)
-    {
-        DecryptOnlinePlugin((u32 *)dst, (u32 *)dst, size);
-    }
 
     if (!res && !ctx->isExeLoadFunctionset)
         return MAKERESULT(RL_PERMANENT, RS_INVALIDARG, RM_LDR, RD_NO_DATA);

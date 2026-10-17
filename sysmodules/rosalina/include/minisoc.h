@@ -21,6 +21,7 @@
 extern bool miniSocEnabled;
 
 Result miniSocInit(void);
+Result miniSocInitEx(bool lockNdmState);
 
 void miniSocLockState(void);
 void miniSocUnlockState(bool force);

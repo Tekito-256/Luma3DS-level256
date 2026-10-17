@@ -23,6 +23,8 @@ Result     MemoryBlock__MountInProcess(void);
 Result     MemoryBlock__UnmountFromProcess(void);
 Result     MemoryBlock__SetSwapSettings(u32* func, bool isDec, u32* params);
 void       MemoryBlock__ResetSwapSettings(void);
+Result     MemoryBlock__L256InitSwapSecret(void);
+void       MemoryBlock__L256ClearSwapSecret(void);
 PluginHeader* MemoryBlock__GetMappedPluginHeader();
 
 extern u32  g_loadSaveSwapArgs[0x4];
@@ -94,6 +96,9 @@ typedef struct
 
     bool            eventsSelfManaged;
     bool            isMemPrivate;
+
+    bool            isLevel256Plugin;
+    u8              lfcsRequestCount;
 }   PluginLoaderContext;
 
 extern PluginLoaderContext PluginLoaderCtx;

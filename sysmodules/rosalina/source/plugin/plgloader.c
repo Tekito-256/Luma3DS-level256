@@ -3,6 +3,7 @@
 #include "utils.h" // for makeARMBranch
 #include "luma_config.h"
 #include "plugin.h"
+#include "plugin/l256_lfcs.h"
 #include "fmt.h"
 #include "menu.h"
 #include "menus.h"
@@ -119,7 +120,11 @@ void PluginLoader__UpdateMenu(void)
             "Plugin Loader: [Disabled]",
             "Plugin Loader: [Enabled]"};
 
-    rosalinaMenu.items[3].title = status[PluginLoaderCtx.isEnabled];
+    for (MenuItem *item = rosalinaMenu.items; item->action_type != MENU_END; item++)
+    {
+        if (item->action_type == METHOD && item->method == PluginLoader__MenuCallback)
+            item->title = status[PluginLoaderCtx.isEnabled];
+    }
 }
 
 static ControlApplicationMemoryModeOverrideConfig g_memorymodeoverridebackup = {0};
@@ -536,6 +541,18 @@ void PluginLoader__HandleCommands(void *_ctx)
         break;
     }
 
+    case L256_PLGLDR_GET_DEVICE_LFCS_BLOB:
+    {
+        L256_HandleGetDeviceLfcsBlob(cmdbuf);
+        break;
+    }
+
+    case L256_PLGLDR_GET_RANDOM_BYTES:
+    {
+        L256_HandleGetRandomBytes(cmdbuf);
+        break;
+    }
+
     case 100: // Plugin Watcher
     {
         bool skip = false;
@@ -714,6 +731,9 @@ static void WaitForProcessTerminated(void *arg)
     ctx->pluginMemoryStrategy = PLG_STRATEGY_SWAP;
     ctx->eventsSelfManaged = false;
     ctx->isMemPrivate = false;
+    ctx->isLevel256Plugin = false;
+    ctx->lfcsRequestCount = 0;
+    MemoryBlock__L256ClearSwapSecret();
     g_blockMenuOpen = 0;
     MemoryBlock__ResetSwapSettings();
 }
