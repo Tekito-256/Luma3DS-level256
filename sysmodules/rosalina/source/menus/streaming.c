@@ -32,6 +32,19 @@ static void formatIp(char *buf, u32 ip)
 
 #define MS_1(us) (us) / 1000, (us) / 100 % 10
 
+#define AUDIO_FRAMES_PER_SECOND (32728 / 160)
+
+static u32 drawSound(u32 posY, const RemotePlayStatus *st)
+{
+    if (st->audioPlayerIp == 0)
+        return Draw_DrawFormattedString(10, posY, COLOR_WHITE, "Sound: no player (UDP %u)\n", REMOTEPLAY_AUDIO_PORT);
+
+    char ip[16];
+    formatIp(ip, st->audioPlayerIp);
+    return Draw_DrawFormattedString(10, posY, COLOR_WHITE, "Sound: to %s, %lu s, missed %lu, err %lu\n", ip,
+        st->audioFrames / AUDIO_FRAMES_PER_SECOND, st->audioMissed, st->audioSendErrors);
+}
+
 static void drawStatus(Result lastResult)
 {
     RemotePlayStatus st;
@@ -44,7 +57,8 @@ static void drawStatus(Result lastResult)
 
     posY = Draw_DrawString(10, posY, COLOR_WHITE,
         "Sends the screens to a PC (Snickerstream or\n"
-        "Chokistream, NTR mode). Picture only.\n\n");
+        "Chokistream, NTR mode), and the sound to the\n"
+        "Level256 sound player.\n\n");
 
     if (st.noNetwork)
     {
@@ -67,6 +81,7 @@ static void drawStatus(Result lastResult)
             formatIp(ip, (u32)socGethostid());
             posY = Draw_DrawString(10, posY, COLOR_WHITE, "Status: waiting for the viewer\n");
             posY = Draw_DrawFormattedString(10, posY, COLOR_GREEN, "Enter this IP in the viewer: %s\n", ip);
+            posY = drawSound(posY, &st);
             break;
 
         case REMOTEPLAY_STREAMING:
@@ -90,6 +105,7 @@ static void drawStatus(Result lastResult)
                 st.framesTop, st.framesBottom, st.sameFrames, st.tornCopies);
             posY = Draw_DrawFormattedString(10, posY, COLOR_WHITE, "Skipped %lu, errors %lu, CPU %lu MHz, L2 %s\n",
                 st.skippedFrames, st.sendErrors, st.clockMhz, st.l2Cache ? "on" : "off");
+            posY = drawSound(posY, &st);
             break;
     }
 

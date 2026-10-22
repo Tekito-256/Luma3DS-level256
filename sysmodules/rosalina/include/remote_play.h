@@ -22,6 +22,7 @@
 
 #define REMOTEPLAY_CONTROL_PORT 8000
 #define REMOTEPLAY_VIDEO_PORT   8001
+#define REMOTEPLAY_AUDIO_PORT   8002
 
 typedef enum RemotePlayState
 {
@@ -59,6 +60,10 @@ typedef struct RemotePlayStatus
     u32 fpsMin, fpsMax;
     u32 busyPct, waitSendPct, waitGamePct;
     u32 encodeMaxUs;
+    u32 audioPlayerIp;
+    u32 audioFrames;
+    u32 audioMissed;
+    u32 audioSendErrors;
 } RemotePlayStatus;
 
 bool RemotePlay_IsRunning(void);

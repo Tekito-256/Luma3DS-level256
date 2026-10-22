@@ -27,6 +27,10 @@ extern u32 g_pid;
 void IR__Patch(void);
 void IR__Unpatch(void);
 
+static LightLock g_targetLock;
+static u32       g_targetSerial;
+static bool      ReleaseEndedTarget(u32 waitMs);
+
 bool PluginChecker_isEnabled = false;
 bool PluginWatcher_isEnabled = false;
 bool PluginWatcher_isRunning = false;
@@ -38,6 +42,7 @@ void PluginLoader__Init(void)
     PluginLoaderContext *ctx = &PluginLoaderCtx;
 
     memset(ctx, 0, sizeof(PluginLoaderContext));
+    LightLock_Init(&g_targetLock);
 
     s64 pluginLoaderFlags = 0;
     s64 pluginWatcherLevel = 0;
@@ -220,6 +225,8 @@ void PluginLoader__HandleCommands(void *_ctx)
             error(cmdbuf, 0xD9001830);
             break;
         }
+
+        ReleaseEndedTarget(2500);
 
         ctx->plgEvent = PLG_OK;
         svcOpenProcess(&ctx->target, cmdbuf[1]);
@@ -705,13 +712,16 @@ u32 PLG__GetConfigMemoryEvent(void)
     return (*(vu32 *)PA_FROM_VA_PTR(0x1FF800F0)) & ~0xFFFF;
 }
 
-static void WaitForProcessTerminated(void *arg)
+static void ReleaseTarget(u32 serial)
 {
-    (void)arg;
     PluginLoaderContext *ctx = &PluginLoaderCtx;
 
-    // Wait until all threads of the process have finished (svcWaitSynchronization == 0) or 2.5 seconds have passed.
-    for (u32 i = 0; svcWaitSynchronization(ctx->target, 0) != 0 && i < 50; i++) svcSleepThread(50000000); // 50ms
+    LightLock_Lock(&g_targetLock);
+    if (ctx->target == 0 || serial != g_targetSerial)
+    {
+        LightLock_Unlock(&g_targetLock);
+        return;
+    }
 
     // Unmap plugin's memory before closing the process
     if (!ctx->pluginIsSwapped)
@@ -736,12 +746,55 @@ static void WaitForProcessTerminated(void *arg)
     MemoryBlock__L256ClearSwapSecret();
     g_blockMenuOpen = 0;
     MemoryBlock__ResetSwapSettings();
+    g_targetSerial++;
+    LightLock_Unlock(&g_targetLock);
+}
+
+static void WaitForProcessTerminated(void *arg)
+{
+    PluginLoaderContext *ctx = &PluginLoaderCtx;
+    u32 serial = *(u32 *)arg;
+
+    for (u32 i = 0; svcWaitSynchronization(ctx->target, 0) != 0 && i < 50; i++) svcSleepThread(50000000);
+
+    ReleaseTarget(serial);
+}
+
+static bool ReleaseEndedTarget(u32 waitMs)
+{
+    PluginLoaderContext *ctx = &PluginLoaderCtx;
+
+    for (u32 i = 0; ctx->target != 0 && PLG__GetConfigMemoryStatus() == PLG_CFG_EXITING && i < 60; i++)
+        svcSleepThread(50 * 1000 * 1000LL);
+
+    LightLock_Lock(&g_targetLock);
+    Handle target = ctx->target;
+    u32    serial = g_targetSerial;
+    LightLock_Unlock(&g_targetLock);
+
+    if (target == 0)
+        return false;
+
+    for (u32 i = 0; svcWaitSynchronization(target, 0) != 0 && i < waitMs / 50; i++)
+        svcSleepThread(50 * 1000 * 1000LL);
+
+    if (svcWaitSynchronization(target, 0) != 0)
+        return false;
+
+    ReleaseTarget(serial);
+    return true;
 }
 
 void PluginLoader__HandleKernelEvent(u32 notifId)
 {
     (void)notifId;
     if (PLG__GetConfigMemoryStatus() == PLG_CFG_EXITING)
+    {
+        srvPublishToSubscriber(0x1002, 0);
+        return;
+    }
+
+    if (ReleaseEndedTarget(0))
     {
         srvPublishToSubscriber(0x1002, 0);
         return;
@@ -761,7 +814,8 @@ void PluginLoader__HandleKernelEvent(u32 notifId)
             PLG__WaitForReply();
         }
         // Start a task to wait for process to be terminated
-        TaskRunner_RunTask(WaitForProcessTerminated, NULL, 0);
+        u32 serial = g_targetSerial;
+        TaskRunner_RunTask(WaitForProcessTerminated, &serial, sizeof(serial));
     }
     else if (event == PLG_CFG_HOME_EVENT)
     {
