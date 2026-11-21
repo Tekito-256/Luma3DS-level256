@@ -71,17 +71,33 @@ void RosalinaMenu_ChangeVersion(void);
 Menu miscellaneousMenu = {
     "Miscellaneous options menu",
     {
-        {"Switch the hb. title to the current app.", METHOD, .method = &MiscellaneousMenu_SwitchBoot3dsxTargetTitle},
-        {"Change the menu combo", METHOD, .method = &MiscellaneousMenu_ChangeMenuCombo},
-        {"Start InputRedirection", METHOD, .method = &MiscellaneousMenu_InputRedirection},
-        {"Update time and date via NTP", METHOD, .method = &MiscellaneousMenu_UpdateTimeDateNtp},
-        {"Nullify user time offset", METHOD, .method = &MiscellaneousMenu_NullifyUserTimeOffset},
-        {"Dump DSP firmware", METHOD, .method = &MiscellaneousMenu_DumpDspFirm},
-        {"Change Luma3DS Version (To v9.1)", METHOD, .method = &RosalinaMenu_ChangeVersion},
+        { "Switch the hb. title to the current app.", METHOD, .method = &MiscellaneousMenu_SwitchBoot3dsxTargetTitle },
+        { "Change the menu combo", METHOD, .method = &MiscellaneousMenu_ChangeMenuCombo },
+        { "Start InputRedirection", METHOD, .method = &MiscellaneousMenu_InputRedirection },
+        { "Update time and date via NTP", METHOD, .method = &MiscellaneousMenu_UpdateTimeDateNtp },
+        { "Nullify user time offset", METHOD, .method = &MiscellaneousMenu_NullifyUserTimeOffset },
+        { "Dump DSP firmware", METHOD, .method = &MiscellaneousMenu_DumpDspFirm },
+        { "Show temperature in Fahrenheit", METHOD, .method = &MiscellaneousMenu_ToggleTemperatureUnit },
+        { "Change Luma3DS Version (To v9.1)", METHOD, .method = &RosalinaMenu_ChangeVersion },
         {},
     }};
 
 int lastNtpTzOffset = 0;
+
+void MiscellaneousMenu_UpdateTemperatureUnitEntry(void)
+{
+    if (lumaMcuConfig.flags & MCUCFG_FLAG_TEMPERATURE_IN_FAHRENHEIT)
+        miscellaneousMenu.items[6].title = "Show temperature in Celsius   ";
+    else
+        miscellaneousMenu.items[6].title = "Show temperature in Fahrenheit";
+}
+
+void MiscellaneousMenu_ToggleTemperatureUnit(void)
+{
+    // Stored in MCU, saved immediately
+    LumaConfig_SetMcuConfigFlags(MCUCFG_FLAG_TEMPERATURE_IN_FAHRENHEIT, lumaMcuConfig.flags ^ MCUCFG_FLAG_TEMPERATURE_IN_FAHRENHEIT);
+    MiscellaneousMenu_UpdateTemperatureUnitEntry();
+}
 
 static inline bool compareTids(u64 tidA, u64 tidB)
 {

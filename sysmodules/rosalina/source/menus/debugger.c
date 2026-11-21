@@ -41,7 +41,9 @@ Menu debuggerMenu = {
     {
         {"Enable debugger", METHOD, .method = &DebuggerMenu_EnableDebugger},
         {"Disable debugger", METHOD, .method = &DebuggerMenu_DisableDebugger},
-        // { "Force-debug next application at launch", METHOD, .method = &DebuggerMenu_DebugNextApplicationByForce },
+#ifdef LEVEL256_DEBUG
+        {"Force-debug next application at launch", METHOD, .method = &DebuggerMenu_DebugNextApplicationByForce},
+#endif
         {},
     }};
 

@@ -638,6 +638,10 @@ static void ProcessListMenu_MemoryViewer(const ProcessInfo *info)
 
 bool isForbiddenName(const char *name)
 {
+#ifdef LEVEL256_DEBUG
+    (void)name;
+    return false;
+#endif
     const char *forbiddenNames[] = {"cfg", "yw-b", "yw3", "yw2", "MOMOTETS", "yw1", "GARDEN", "GARDEN_P"};
 
     if (isOnlinePlugin)

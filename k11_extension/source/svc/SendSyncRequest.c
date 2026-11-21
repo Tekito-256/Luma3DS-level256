@@ -558,6 +558,33 @@ Result SendSyncRequestHook(Handle handle)
             break;
         }
 
+        case 0x2E0040:
+        {
+
+            if (cfwInfo.ledMasterBrightnessOverride != 0 || (u8)cmdbuf[1] != 2)
+                break;
+
+            SessionInfo *info = SessionInfo_Lookup(clientSession->parentSession);
+            if (info != NULL && strcmp(info->name, "mcu::RTC") == 0)
+                cmdbuf[1] = (cmdbuf[1] & ~0xFF) | 0;
+            break;
+        }
+
+        case 0x300040:
+        {
+            if (cfwInfo.ledMasterBrightnessOverride != 0)
+                break;
+
+            SessionInfo *info = SessionInfo_Lookup(clientSession->parentSession);
+            if (info != NULL && strcmp(info->name, "mcu::RTC") == 0)
+            {
+                cmdbuf[0] = 0x300040;
+                cmdbuf[1] = 0;
+                skip = true;
+            }
+            break;
+        }
+
         case 0x4010082:
         {
             SessionInfo *info = SessionInfo_Lookup(clientSession->parentSession);
